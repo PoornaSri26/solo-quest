@@ -475,3 +475,80 @@ aside {
   border-radius: 0 2px 2px 0;
   box-shadow: 0 0 8px rgba(124,110,240,0.8);
 }
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .hero__content {
+    padding: 0 1rem;
+  }
+  
+  .system-terminal {
+    font-size: clamp(12px, 4vw, 16px);
+  }
+  
+  .hero__cta {
+    padding: 12px 32px;
+    font-size: 12px;
+  }
+}
+
+/* Mobile menu improvements */
+@media (max-width: 640px) {
+  aside {
+    position: fixed;
+    left: -100%;
+    transition: left 0.3s ease;
+    z-index: 1000;
+  }
+  
+  aside.open {
+    left: 0;
+  }
+}
+
+/* Touch-friendly button sizes */
+@media (hover: none) {
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Improved focus states for accessibility */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #7c6ef0;
+  outline-offset: 2px;
+}
+
+/* Responsive grid fallbacks */
+@media (max-width: 1024px) {
+  .lg\:grid-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .lg\:grid-cols-3,
+  .lg\:grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+  
+  .md\:grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Performance optimizations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
