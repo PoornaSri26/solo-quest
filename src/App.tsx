@@ -1,0 +1,253 @@
+import React, { useEffect, Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+import { useStore } from './store/useStore';
+import Dashboard from './components/Dashboard';
+import AuthPage from './pages/AuthPage';
+import LandingPage from './pages/LandingPage';
+import SystemToastContainer from './components/SystemToastContainer';
+import { getAvatarUrl } from './lib/avatars';
+import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X } from 'lucide-react';
+
+// Lazy load pages for code splitting
+const QuestLogPage = lazy(() => import('./pages/QuestLogPage'));
+const HunterProfilePage = lazy(() => import('./pages/HunterProfilePage'));
+const GatesPage = lazy(() => import('./pages/GatesPage'));
+const ShadowRealmPage = lazy(() => import('./pages/ShadowRealmPage'));
+const ShopPage = lazy(() => import('./pages/ShopPage'));
+
+// Loading component for lazy-loaded pages
+const PageLoader = () => (
+  <div className="flex items-center justify-center p-6">
+    <div className="animate-spin rounded-full h-8 w-8 border-2 border-gold-primary border-t-transparent"></div>
+  </div>
+);
+
+const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const token = useStore((s) => s.token);
+  if (!token) return <Navigate to="/welcome" replace />;
+  return <>{children}</>;
+};
+
+const AppLayout: React.FC = () => {
+  const { token, stats, hunter, logout, initializeApp, connectWebSocket } = useStore();
+  const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+
+  useEffect(() => {
+    if (token) {
+      connectWebSocket();
+      initializeApp();
+    }
+  }, [token]);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/auth');
+  };
+
+  return (
+    <div className="flex min-h-screen bg-void text-text-primary">
+      {/* Mobile Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border-subtle flex items-center justify-between px-4 z-40">
+        <div className="font-display text-gold-primary text-xl tracking-wider">Solo Quest</div>
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 text-text-secondary hover:text-text-primary transition-fast"
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+
+      {/* Sidebar Overlay for Mobile */}
+      {isMobileMenuOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed md:static inset-y-0 left-0 z-50 w-64 bg-surface border-r border-border-subtle flex flex-col p-4 flex-shrink-0 transition-transform duration-300 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="flex items-center space-x-3 mb-6">
+          <img
+            src={hunter?.avatarUrl || getAvatarUrl(hunter?.hunterId || hunter?.displayName || 'Hunter')}
+            alt="Avatar"
+            className="w-12 h-12 rounded-sm border border-border-subtle bg-raised"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = getAvatarUrl(hunter?.hunterId || hunter?.displayName || 'Hunter');
+            }}
+          />
+          <div>
+            <p className="font-display text-text-primary tracking-wide">Solo Quest</p>
+            <p className="text-sm text-text-secondary truncate max-w-[140px]">
+              {hunter?.displayName || 'Hunter'}
+            </p>
+          </div>
+        </div>
+
+        {/* Rank Badge */}
+        {stats && (
+          <div className="mb-4 p-3 bg-raised rounded-sm border border-border-subtle">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-secondary">Rank</span>
+              <span className="font-display text-gold-primary">{stats.rank}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs mt-1">
+              <span className="text-text-secondary">Level</span>
+              <span className="font-data text-text-primary">{stats.level}</span>
+            </div>
+            <div className="mt-2 bg-gold-dim rounded-sm h-1">
+              <div
+                className="bg-gold-primary h-1 rounded-sm transition-slow"
+                style={{ width: `${stats.progressPercent || 0}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <nav className="flex-1 space-y-1">
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-all duration-200
+              ${isActive
+                ? 'bg-gradient-to-r from-violet-gate/20 to-transparent text-white font-medium border-l-2 border-violet-gate'
+                : 'text-text-secondary hover:bg-raised hover:text-text-primary'
+              }
+            `}
+          >
+            <Swords className="w-4 h-4" />
+            Dashboard
+          </NavLink>
+          <NavLink
+            to="/quests"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-all duration-200
+              ${isActive
+                ? 'bg-gradient-to-r from-gold-primary/20 to-transparent text-white font-medium border-l-2 border-gold-primary'
+                : 'text-text-secondary hover:bg-raised hover:text-text-primary'
+              }
+            `}
+          >
+            <ScrollText className="w-4 h-4" />
+            Quest Log
+          </NavLink>
+          <NavLink
+            to="/gates"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <DoorOpen className="w-4 h-4" />
+            Gates
+          </NavLink>
+          <NavLink
+            to="/profile"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <User className="w-4 h-4" />
+            Hunter Profile
+          </NavLink>
+          <NavLink
+            to="/shadow"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Ghost className="w-4 h-4" />
+            Shadow Realm
+          </NavLink>
+          <NavLink
+            to="/shop"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Store className="w-4 h-4" />
+            Shop
+          </NavLink>
+        </nav>
+
+        {/* Gold + Logout */}
+        <div className="mt-4 pt-4 border-t border-border-subtle">
+          <p className="font-data text-gold-primary text-center text-sm mb-3">
+            {stats?.gold ?? 0}g
+          </p>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-crimson hover:bg-crimson/10 rounded-sm transition-fast border border-border-subtle"
+          >
+            <LogOut className="w-3 h-3" />
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto pt-16 md:pt-0">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/quests" element={
+            <Suspense fallback={<PageLoader />}>
+              <QuestLogPage />
+            </Suspense>
+          } />
+          <Route path="/profile" element={
+            <Suspense fallback={<PageLoader />}>
+              <HunterProfilePage />
+            </Suspense>
+          } />
+          <Route path="/gates" element={
+            <Suspense fallback={<PageLoader />}>
+              <GatesPage />
+            </Suspense>
+          } />
+          <Route path="/shadow" element={
+            <Suspense fallback={<PageLoader />}>
+              <ShadowRealmPage />
+            </Suspense>
+          } />
+          <Route path="/shop" element={
+            <Suspense fallback={<PageLoader />}>
+              <ShopPage />
+            </Suspense>
+          } />
+          <Route path="*" element={<div className="p-6 text-center text-text-secondary">404 - Page not found</div>} />
+        </Routes>
+      </main>
+
+      <SystemToastContainer />
+    </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/welcome" element={<LandingPage />} />
+        <Route path="/auth" element={<AuthPage />} />
+        <Route
+          path="/*"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+};
+
+export default App;
