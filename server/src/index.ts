@@ -1935,6 +1935,854 @@ app.get('/api/quests/summary', authenticateToken, async (req, res) => {
 });
 
 // ========================
+// MMM Framework - Milestones, Mastery, Mementos
+// ========================
+
+app.get('/api/milestones', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const milestones = await withRetry(() =>
+      prisma.milestone.findMany({
+        include: {
+          progress: {
+            where: { userId },
+          },
+        },
+      })
+    );
+
+    res.json(milestones);
+  } catch (error) {
+    logger.error('Get milestones error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/milestones/progress', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const progress = await withRetry(() =>
+      prisma.milestoneProgress.findMany({
+        where: { userId },
+        include: {
+          milestone: true,
+        },
+      })
+    );
+
+    res.json(progress);
+  } catch (error) {
+    logger.error('Get milestone progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/milestones/:id/complete', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+
+    const milestone = await withRetry(() =>
+      prisma.milestone.findUnique({
+        where: { id },
+      })
+    );
+
+    if (!milestone) {
+      return res.status(404).json({ error: 'Milestone not found' });
+    }
+
+    const [progress, stats] = await withRetry(() =>
+      prisma.$transaction([
+        prisma.milestoneProgress.upsert({
+          where: {
+            userId_milestoneId: {
+              userId,
+              milestoneId: id,
+            },
+          },
+          update: {
+            completed: true,
+            completedAt: new Date(),
+          },
+          create: {
+            userId,
+            milestoneId: id,
+            completed: true,
+            completedAt: new Date(),
+          },
+        }),
+        prisma.hunterStats.findUnique({
+          where: { userId },
+        }),
+      ])
+    );
+
+    if (stats) {
+      await withRetry(() =>
+        prisma.hunterStats.update({
+          where: { userId },
+          data: {
+            exp: { increment: milestone.xpReward },
+            gold: { increment: milestone.goldReward },
+          },
+        })
+      );
+
+      io.to(userId).emit('statsUpdated', {
+        exp: stats.exp + milestone.xpReward,
+        gold: stats.gold + milestone.goldReward,
+      });
+    }
+
+    if (milestone.mementoId) {
+      await withRetry(() =>
+        prisma.userMemento.create({
+          data: {
+            userId,
+            mementoId: milestone.mementoId!,
+          },
+        })
+      );
+    }
+
+    res.json({ success: true, milestone, reward: { xp: milestone.xpReward, gold: milestone.goldReward } });
+  } catch (error) {
+    logger.error('Complete milestone error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/mastery-challenges', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const challenges = await withRetry(() =>
+      prisma.masteryChallenge.findMany({
+        include: {
+          progress: {
+            where: { userId },
+          },
+        },
+      })
+    );
+
+    res.json(challenges);
+  } catch (error) {
+    logger.error('Get mastery challenges error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/mastery-challenges/progress', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const progress = await withRetry(() =>
+      prisma.masteryChallengeProgress.findMany({
+        where: { userId },
+        include: {
+          challenge: true,
+        },
+      })
+    );
+
+    res.json(progress);
+  } catch (error) {
+    logger.error('Get mastery challenge progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/mastery-challenges/:id/attempt', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const { score } = req.body;
+
+    const challenge = await withRetry(() =>
+      prisma.masteryChallenge.findUnique({
+        where: { id },
+      })
+    );
+
+    if (!challenge) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    const existingProgress = await withRetry(() =>
+      prisma.masteryChallengeProgress.findUnique({
+        where: {
+          userId_challengeId: {
+            userId,
+            challengeId: id,
+          },
+        },
+      })
+    );
+
+    const newBestScore = existingProgress?.bestScore
+      ? Math.max(existingProgress.bestScore, score || 0)
+      : score || 0;
+
+    const completed = score && score >= 80;
+
+    const progress = await withRetry(() =>
+      prisma.masteryChallengeProgress.upsert({
+        where: {
+          userId_challengeId: {
+            userId,
+            challengeId: id,
+          },
+        },
+        update: {
+          attempts: { increment: 1 },
+          bestScore: newBestScore,
+          completed,
+          completedAt: completed ? new Date() : undefined,
+        },
+        create: {
+          userId,
+          challengeId: id,
+          attempts: 1,
+          bestScore: newBestScore,
+          completed,
+          completedAt: completed ? new Date() : undefined,
+        },
+      })
+    );
+
+    if (completed && !existingProgress?.completed) {
+      await withRetry(() =>
+        prisma.hunterStats.update({
+          where: { userId },
+          data: {
+            exp: { increment: challenge.xpReward },
+            gold: { increment: challenge.goldReward },
+          },
+        })
+      );
+    }
+
+    res.json({ success: true, progress });
+  } catch (error) {
+    logger.error('Attempt mastery challenge error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/mementos', authenticateToken, async (req, res) => {
+  try {
+    const mementos = await withRetry(() =>
+      prisma.memento.findMany({
+        include: {
+          milestones: true,
+        },
+      })
+    );
+
+    res.json(mementos);
+  } catch (error) {
+    logger.error('Get mementos error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/mementos/user', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const userMementos = await withRetry(() =>
+      prisma.userMemento.findMany({
+        where: { userId },
+        include: {
+          memento: true,
+        },
+      })
+    );
+
+    res.json(userMementos);
+  } catch (error) {
+    logger.error('Get user mementos error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Three-type Dilemma Triangle
+// ========================
+
+app.post('/api/quests/:id/decision', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const { decisionType, choice } = req.body;
+
+    if (!['SCARCITY', 'TRADEOFF', 'PREDICTION'].includes(decisionType)) {
+      return res.status(400).json({ error: 'Invalid decision type' });
+    }
+
+    const quest = await withRetry(() =>
+      prisma.quest.findUnique({
+        where: { id },
+      })
+    );
+
+    if (!quest) {
+      return res.status(404).json({ error: 'Quest not found' });
+    }
+
+    if (quest.userId !== userId) {
+      return res.status(403).json({ error: 'Not authorized for this quest' });
+    }
+
+    const decision = await withRetry(() =>
+      prisma.questDecision.create({
+        data: {
+          userId,
+          questId: id,
+          decisionType,
+          choice,
+          timestamp: new Date(),
+        },
+      })
+    );
+
+    res.json({ success: true, decision });
+  } catch (error) {
+    logger.error('Record quest decision error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/quests/:id/decisions', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+
+    const decisions = await withRetry(() =>
+      prisma.questDecision.findMany({
+        where: {
+          userId,
+          questId: id,
+        },
+        orderBy: {
+          timestamp: 'desc',
+        },
+      })
+    );
+
+    res.json(decisions);
+  } catch (error) {
+    logger.error('Get quest decisions error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Dual-use Resource Management
+// ========================
+
+app.post('/api/resources/use', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { resourceType, amount, purpose } = req.body;
+
+    if (!['GOLD', 'HP', 'TIME'].includes(resourceType)) {
+      return res.status(400).json({ error: 'Invalid resource type' });
+    }
+
+    if (!['SHOP_PURCHASE', 'QUEST_BOOST', 'TIME_EXTENSION', 'DIFFICULTY_MODIFIER'].includes(purpose)) {
+      return res.status(400).json({ error: 'Invalid purpose' });
+    }
+
+    const stats = await withRetry(() =>
+      prisma.hunterStats.findUnique({
+        where: { userId },
+      })
+    );
+
+    if (!stats) {
+      return res.status(404).json({ error: 'Hunter stats not found' });
+    }
+
+    if (resourceType === 'GOLD' && stats.gold < amount) {
+      return res.status(400).json({ error: 'Insufficient gold' });
+    }
+
+    if (resourceType === 'HP' && stats.hp < amount) {
+      return res.status(400).json({ error: 'Insufficient HP' });
+    }
+
+    await withRetry(() =>
+      prisma.$transaction([
+        prisma.resourceUsage.create({
+          data: {
+            userId,
+            resourceType,
+            amount,
+            purpose,
+            timestamp: new Date(),
+          },
+        }),
+        prisma.hunterStats.update({
+          where: { userId },
+          data: {
+            ...(resourceType === 'GOLD' && { gold: { decrement: amount } }),
+            ...(resourceType === 'HP' && { hp: { decrement: amount } }),
+          },
+        }),
+      ])
+    );
+
+    io.to(userId).emit('statsUpdated', {
+      ...(resourceType === 'GOLD' && { gold: stats.gold - amount }),
+      ...(resourceType === 'HP' && { hp: stats.hp - amount }),
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Use resource error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/resources/usage', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const usage = await withRetry(() =>
+      prisma.resourceUsage.findMany({
+        where: { userId },
+        orderBy: {
+          timestamp: 'desc',
+        },
+        take: 50,
+      })
+    );
+
+    res.json(usage);
+  } catch (error) {
+    logger.error('Get resource usage error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Elastic Failure System
+// ========================
+
+app.post('/api/quests/:id/recover', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+
+    const quest = await withRetry(() =>
+      prisma.quest.findUnique({
+        where: { id },
+      })
+    );
+
+    if (!quest) {
+      return res.status(404).json({ error: 'Quest not found' });
+    }
+
+    if (quest.userId !== userId) {
+      return res.status(403).json({ error: 'Not authorized for this quest' });
+    }
+
+    if (quest.status !== 'FAILED') {
+      return res.status(400).json({ error: 'Quest is not in failed state' });
+    }
+
+    const updatedQuest = await withRetry(() =>
+      prisma.quest.update({
+        where: { id },
+        data: {
+          status: 'ACTIVE',
+          expReward: Math.floor(quest.expReward * 0.7),
+          goldReward: Math.floor(quest.goldReward * 0.7),
+        },
+      })
+    );
+
+    res.json({ success: true, quest: updatedQuest });
+  } catch (error) {
+    logger.error('Recover quest error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Tiered Risk/Reward Completion
+// ========================
+
+app.post('/api/quests/:id/complete-tiered', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const { completionQuality } = req.body;
+
+    if (!['PERFECT', 'GOOD', 'POOR'].includes(completionQuality)) {
+      return res.status(400).json({ error: 'Invalid completion quality' });
+    }
+
+    const quest = await withRetry(() =>
+      prisma.quest.findUnique({
+        where: { id },
+      })
+    );
+
+    if (!quest) {
+      return res.status(404).json({ error: 'Quest not found' });
+    }
+
+    if (quest.userId !== userId) {
+      return res.status(403).json({ error: 'Not authorized for this quest' });
+    }
+
+    const qualityMultipliers = {
+      PERFECT: 1.5,
+      GOOD: 1.0,
+      POOR: 0.5,
+    };
+
+    const multiplier = qualityMultipliers[completionQuality as keyof typeof qualityMultipliers];
+    const xpEarned = Math.floor(quest.expReward * multiplier);
+    const goldEarned = Math.floor(quest.goldReward * multiplier);
+
+    const [updatedQuest, stats] = await withRetry(() =>
+      prisma.$transaction([
+        prisma.quest.update({
+          where: { id },
+          data: {
+            status: 'COMPLETED',
+            completedAt: new Date(),
+          },
+        }),
+        prisma.hunterStats.update({
+          where: { userId },
+          data: {
+            exp: { increment: xpEarned },
+            gold: { increment: goldEarned },
+            lastActiveDate: new Date(),
+          },
+        }),
+      ])
+    );
+
+    io.to(userId).emit('statsUpdated', {
+      exp: stats.exp + xpEarned,
+      gold: stats.gold + goldEarned,
+    });
+
+    res.json({
+      success: true,
+      quest: updatedQuest,
+      rewards: { xp: xpEarned, gold: goldEarned },
+      quality: completionQuality,
+    });
+  } catch (error) {
+    logger.error('Complete quest tiered error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Knowledge Progression
+// ========================
+
+app.get('/api/knowledge', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const knowledge = await withRetry(() =>
+      prisma.knowledgeProgress.findUnique({
+        where: { userId },
+      })
+    );
+
+    if (!knowledge) {
+      const newKnowledge = await withRetry(() =>
+        prisma.knowledgeProgress.create({
+          data: {
+            userId,
+            questPatternsLearned: 0,
+            optimalRoutesDiscovered: 0,
+            shortcutsUnlocked: 0,
+            efficiencyRating: 0,
+            lastUpdated: new Date(),
+          },
+        })
+      );
+      return res.json(newKnowledge);
+    }
+
+    res.json(knowledge);
+  } catch (error) {
+    logger.error('Get knowledge progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/knowledge', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { questPatternsLearned, optimalRoutesDiscovered, shortcutsUnlocked, efficiencyRating } = req.body;
+
+    const knowledge = await withRetry(() =>
+      prisma.knowledgeProgress.upsert({
+        where: { userId },
+        update: {
+          ...(questPatternsLearned !== undefined && { questPatternsLearned }),
+          ...(optimalRoutesDiscovered !== undefined && { optimalRoutesDiscovered }),
+          ...(shortcutsUnlocked !== undefined && { shortcutsUnlocked }),
+          ...(efficiencyRating !== undefined && { efficiencyRating }),
+          lastUpdated: new Date(),
+        },
+        create: {
+          userId,
+          questPatternsLearned: questPatternsLearned || 0,
+          optimalRoutesDiscovered: optimalRoutesDiscovered || 0,
+          shortcutsUnlocked: shortcutsUnlocked || 0,
+          efficiencyRating: efficiencyRating || 0,
+          lastUpdated: new Date(),
+        },
+      })
+    );
+
+    res.json({ success: true, knowledge });
+  } catch (error) {
+    logger.error('Update knowledge progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Social Features
+// ========================
+
+app.get('/api/social/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const socialStats = await withRetry(() =>
+      prisma.socialStats.findUnique({
+        where: { userId },
+      })
+    );
+
+    if (!socialStats) {
+      const newSocialStats = await withRetry(() =>
+        prisma.socialStats.create({
+          data: {
+            userId,
+            friendsAdded: 0,
+            questsShared: 0,
+            achievementsShared: 0,
+            leaderboardRank: 0,
+            socialScore: 0,
+            lastUpdated: new Date(),
+          },
+        })
+      );
+      return res.json(newSocialStats);
+    }
+
+    res.json(socialStats);
+  } catch (error) {
+    logger.error('Get social stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/social/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { friendsAdded, questsShared, achievementsShared, leaderboardRank, socialScore } = req.body;
+
+    const socialStats = await withRetry(() =>
+      prisma.socialStats.upsert({
+        where: { userId },
+        update: {
+          ...(friendsAdded !== undefined && { friendsAdded }),
+          ...(questsShared !== undefined && { questsShared }),
+          ...(achievementsShared !== undefined && { achievementsShared }),
+          ...(leaderboardRank !== undefined && { leaderboardRank }),
+          ...(socialScore !== undefined && { socialScore }),
+          lastUpdated: new Date(),
+        },
+        create: {
+          userId,
+          friendsAdded: friendsAdded || 0,
+          questsShared: questsShared || 0,
+          achievementsShared: achievementsShared || 0,
+          leaderboardRank: leaderboardRank || 0,
+          socialScore: socialScore || 0,
+          lastUpdated: new Date(),
+        },
+      })
+    );
+
+    res.json({ success: true, socialStats });
+  } catch (error) {
+    logger.error('Update social stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/leaderboard', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+
+    const leaderboard = await withRetry(() =>
+      prisma.hunterStats.findMany({
+        take: parseInt(limit as string),
+        orderBy: {
+          level: 'desc',
+        },
+        include: {
+          user: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      })
+    );
+
+    res.json(leaderboard);
+  } catch (error) {
+    logger.error('Get leaderboard error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Finite Progression Endpoints
+// ========================
+
+app.get('/api/progression/endpoint', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const stats = await withRetry(() =>
+      prisma.hunterStats.findUnique({
+        where: { userId },
+      })
+    );
+
+    if (!stats) {
+      return res.status(404).json({ error: 'Hunter stats not found' });
+    }
+
+    // Define progression endpoints
+    const endpoints = [
+      { level: 10, rank: 'D', name: 'Novice Hunter Complete' },
+      { level: 20, rank: 'C', name: 'Skilled Hunter Complete' },
+      { level: 30, rank: 'B', name: 'Elite Hunter Complete' },
+      { level: 40, rank: 'A', name: 'Master Hunter Complete' },
+      { level: 50, rank: 'S', name: 'Legendary Hunter Complete' },
+    ];
+
+    const currentEndpoint = endpoints.find(ep => stats.level >= ep.level);
+    const nextEndpoint = endpoints.find(ep => stats.level < ep.level);
+
+    const milestoneProgress = await withRetry(() =>
+      prisma.milestoneProgress.count({
+        where: { userId, completed: true },
+      })
+    );
+
+    const masteryProgress = await withRetry(() =>
+      prisma.masteryChallengeProgress.count({
+        where: { userId, completed: true },
+      })
+    );
+
+    const mementosCollected = await withRetry(() =>
+      prisma.userMemento.count({
+        where: { userId },
+      })
+    );
+
+    const totalMementos = await withRetry(() =>
+      prisma.memento.count()
+    );
+
+    const completionPercentage = (milestoneProgress / 5) * 100; // Assuming 5 base milestones
+
+    res.json({
+      currentLevel: stats.level,
+      currentRank: stats.rank,
+      currentEndpoint: currentEndpoint || null,
+      nextEndpoint: nextEndpoint || null,
+      milestonesCompleted: milestoneProgress,
+      masteryChallengesCompleted: masteryProgress,
+      mementosCollected,
+      totalMementos,
+      completionPercentage,
+      isEndgame: stats.rank === 'S' && stats.level >= 50,
+    });
+  } catch (error) {
+    logger.error('Get progression endpoint error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/progression/complete-chapter', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { chapterName } = req.body;
+
+    const stats = await withRetry(() =>
+      prisma.hunterStats.findUnique({
+        where: { userId },
+      })
+    );
+
+    if (!stats) {
+      return res.status(404).json({ error: 'Hunter stats not found' });
+    }
+
+    // Create a special milestone for chapter completion
+    const chapterMilestone = await withRetry(() =>
+      prisma.milestone.create({
+        data: {
+          name: `Chapter: ${chapterName}`,
+          description: `Completed the ${chapterName} chapter`,
+          requirement: 'Reach progression endpoint',
+          xpReward: 1000,
+          goldReward: 500,
+        },
+      })
+    );
+
+    await withRetry(() =>
+      prisma.milestoneProgress.create({
+        data: {
+          userId,
+          milestoneId: chapterMilestone.id,
+          completed: true,
+          completedAt: new Date(),
+        },
+      })
+    );
+
+    res.json({
+      success: true,
+      milestone: chapterMilestone,
+      message: `Chapter "${chapterName}" completed!`,
+    });
+  } catch (error) {
+    logger.error('Complete chapter error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
 // Error handling middleware
 // ========================
 

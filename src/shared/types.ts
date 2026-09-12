@@ -167,3 +167,110 @@ export interface FeedbackIntensity {
   soundEffect: string;
   particleIntensity: number;
 }
+
+// Phase 2 & 3 types
+export interface Milestone {
+  id: string;
+  name: string;
+  description: string;
+  requirement: string;
+  xpReward: number;
+  goldReward: number;
+  mementoId?: string | null;
+  progress?: MilestoneProgress[];
+}
+
+export interface MilestoneProgress {
+  id: string;
+  userId: string;
+  milestoneId: string;
+  completed: boolean;
+  completedAt?: string | null;
+  progress: number;
+  milestone?: Milestone;
+}
+
+export interface MasteryChallenge {
+  id: string;
+  name: string;
+  description: string;
+  requirement: string;
+  xpReward: number;
+  goldReward: number;
+  difficulty: string;
+  progress?: MasteryChallengeProgress[];
+}
+
+export interface MasteryChallengeProgress {
+  id: string;
+  userId: string;
+  challengeId: string;
+  completed: boolean;
+  completedAt?: string | null;
+  attempts: number;
+  bestScore?: number | null;
+  challenge?: MasteryChallenge;
+}
+
+export interface Memento {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  rarity: string;
+  category: string;
+  milestones?: Milestone[];
+  userMementos?: UserMemento[];
+}
+
+export interface UserMemento {
+  id: string;
+  userId: string;
+  mementoId: string;
+  unlockedAt: string;
+  memento?: Memento;
+}
+
+export interface QuestDecision {
+  id: string;
+  userId: string;
+  questId: string;
+  decisionType: 'SCARCITY' | 'TRADEOFF' | 'PREDICTION';
+  choice: string;
+  timestamp: string;
+}
+
+export interface ResourceUsage {
+  id: string;
+  userId: string;
+  resourceType: 'GOLD' | 'HP' | 'TIME';
+  amount: number;
+  purpose: 'SHOP_PURCHASE' | 'QUEST_BOOST' | 'TIME_EXTENSION' | 'DIFFICULTY_MODIFIER';
+  timestamp: string;
+}
+
+export interface KnowledgeProgress {
+  id: string;
+  userId: string;
+  questPatternsLearned: number;
+  optimalRoutesDiscovered: number;
+  shortcutsUnlocked: number;
+  efficiencyRating: number;
+  lastUpdated: string;
+}
+
+export interface SocialStats {
+  id: string;
+  userId: string;
+  friendsAdded: number;
+  questsShared: number;
+  achievementsShared: number;
+  leaderboardRank: number;
+  socialScore: number;
+  lastUpdated: string;
+}
+
+export type CompletionQuality = 'PERFECT' | 'GOOD' | 'POOR';
+export type DecisionType = 'SCARCITY' | 'TRADEOFF' | 'PREDICTION';
+export type ResourceType = 'GOLD' | 'HP' | 'TIME';
+export type ResourcePurpose = 'SHOP_PURCHASE' | 'QUEST_BOOST' | 'TIME_EXTENSION' | 'DIFFICULTY_MODIFIER';
