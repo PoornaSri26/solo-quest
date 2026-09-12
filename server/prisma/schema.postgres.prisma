@@ -1,0 +1,180 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  hunterId      String   @unique
+  displayName   String
+  email         String   @unique
+  passwordHash  String
+  avatarUrl     String?
+  createdAt     DateTime @default(now())
+  hunterStats   HunterStats? @relation("HunterStats")
+  quests        Quest[]  @relation("UserQuests")
+  gates         Gate[]   @relation("UserGates")
+  dailyDungeons DailyDungeon[] @relation("UserDungeons")
+  notifications Notification[] @relation("UserNotifications")
+  inventory     UserInventory[] @relation("UserInventory")
+}
+
+model HunterStats {
+  id               String   @id @default(uuid())
+  userId           String   @unique @map("fk_user_id")
+  level            Int      @default(1)
+  exp              Int      @default(0)
+  expToNext        Int      @default(100)
+  progressPercent  Float    @default(0)
+  rank             String     @default("E") // Rank: E, D, C, B, A, S
+  hp               Int      @default(100)
+  hpMax            Int      @default(100)
+  gold             Int      @default(0)
+  streak           Int      @default(0)
+  longestStreak    Int      @default(0)
+  streakWards     Int      @default(1)
+  streakWagerActive Boolean @default(false)
+  streakWagerGoal  Int      @default(0)
+  streakWagerStake Int      @default(0)
+  streakWagerStart DateTime?
+  statStrength     Int      @default(0)
+  statAgility      Int      @default(0)
+  statIntelligence Int      @default(0)
+  statEndurance    Int      @default(0)
+  statLuck         Int      @default(0)
+  lastActiveDate   DateTime @default(now())
+  user             User     @relation("HunterStats", fields: [userId], references: [id])
+}
+
+// Enums replaced with strings for SQLite compatibility
+// Rank: E, D, C, B, A, S
+
+// QuestCategory: Combat, Intel, Craft, Survival, Social, Wildcard
+
+// QuestStatus: SHADOW, ACTIVE, IN_PROGRESS, COMPLETED, FAILED, ARCHIVED
+
+model Quest {
+  id           String   @id @default(uuid())
+  userId       String   @map("fk_user_id")
+  title        String
+  rank         String // Rank: E, D, C, B, A, S
+  category     String // QuestCategory: Combat, Intel, Craft, Survival, Social, Wildcard
+  status       String // QuestStatus: SHADOW, ACTIVE, IN_PROGRESS, COMPLETED, FAILED, ARCHIVED @default(SHADOW)
+  deadline     DateTime?
+  notes        String?
+  gateId       String?    @map("fk_gate_id")
+  isBossQuest  Boolean    @default(false)
+  expReward    Int
+  goldReward   Int
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  subtasks     QuestSubtask[] @relation("QuestSubtasks")
+  gate         Gate?      @relation("QuestGate", fields: [gateId], references: [id])
+  user       User       @relation("UserQuests", fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([userId, gateId])
+  @@index([userId, completedAt])
+}
+
+model QuestSubtask {
+  id        String   @id @default(uuid())
+  questId   String   @map("fk_quest_id")
+  title     String
+  completed Boolean  @default(false)
+  position  Int
+  quest     Quest    @relation("QuestSubtasks", fields: [questId], references: [id])
+}
+
+// GateStatus: ACTIVE, CLEARED, COLLAPSED
+
+model Gate {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  name      String
+  rank      String // Rank: E, D, C, B, A, S
+  deadline  DateTime?
+  status    String // GateStatus: ACTIVE, CLEARED, COLLAPSED @default(ACTIVE)
+  createdAt DateTime @default(now())
+  user      User     @relation("UserGates", fields: [userId], references: [id])
+  quests    Quest[]  @relation("QuestGate")
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+}
+
+model DailyDungeon {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  name      String
+  shift     String? // Shift: MORNING, AFTERNOON, NIGHT, ALL_DAY @default(ALL_DAY)
+  active    Boolean  @default(true)
+  tasks     DungeonTask[] @relation("DungeonTasks")
+  logs      DungeonLog[] @relation("DungeonLogs")
+  user      User     @relation("UserDungeons", fields: [userId], references: [id])
+}
+
+// Shift: MORNING, AFTERNOON, NIGHT, ALL_DAY
+
+model DungeonTask {
+  id        String   @id @default(uuid())
+  dungeonId String   @map("fk_dungeon_id")
+  title     String
+  rank      String // Rank: E, D, C, B, A, S
+  position  Int
+  completed Boolean  @default(false)
+  dungeon   DailyDungeon @relation("DungeonTasks", fields: [dungeonId], references: [id])
+}
+
+model DungeonLog {
+  id            String   @id @default(uuid())
+  dungeonId     String   @map("fk_dungeon_id")
+  date          DateTime @default(now())
+  completedCount Int
+  totalCount    Int
+  cleared       Boolean
+  dungeon       DailyDungeon @relation("DungeonLogs", fields: [dungeonId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  message   String
+  type      String // NotificationType: INFO, WARNING, REWARD, PENALTY
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation("UserNotifications", fields: [userId], references: [id])
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+// NotificationType: INFO, WARNING, REWARD, PENALTY
+
+model ShopItem {
+  id        String   @id @default(uuid())
+  name      String
+  category  String // ShopCategory: THEME, FRAME, TITLE, ICON_SET
+  costGold  Int
+  description String?
+  userInventory UserInventory[] @relation("Item")
+}
+
+// ShopCategory: THEME, FRAME, TITLE, ICON_SET
+
+model UserInventory {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  itemId    String   @map("fk_item_id")
+  equipped  Boolean  @default(false)
+  acquiredAt DateTime @default(now())
+  user      User     @relation("UserInventory", fields: [userId], references: [id])
+  item      ShopItem @relation("Item", fields: [itemId], references: [id])
+
+  @@unique([userId, itemId])
+}
