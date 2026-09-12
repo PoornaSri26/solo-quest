@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import Tilt from 'react-parallax-tilt';
 import { HunterStatusBar } from './HunterStatusBar';
 import QuestCard from './QuestCard';
@@ -13,6 +13,10 @@ import { Leaderboard } from '../sections/Leaderboard';
 import { Forge } from '../sections/Forge';
 import ResourceActions from './ResourceActions';
 import { useStore } from '../store/useStore';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 const Dashboard: React.FC = () => {
   const {
@@ -24,6 +28,9 @@ const Dashboard: React.FC = () => {
     deleteQuest,
   } = useStore();
 
+  const mainGridRef = useRef<HTMLDivElement>(null);
+  const additionalGridRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     // Initialize demo data on mount
     fetchHunter();
@@ -31,6 +38,37 @@ const Dashboard: React.FC = () => {
     fetchQuests();
     fetchGates();
   }, [fetchHunter, fetchStats, fetchQuests, fetchGates]);
+
+  // GSAP animations
+  useEffect(() => {
+    gsap.fromTo(mainGridRef.current?.children || [],
+      { y: 50, opacity: 0, rotationX: 10 },
+      {
+        y: 0, opacity: 1, rotationX: 0,
+        duration: 0.6, stagger: 0.1,
+        scrollTrigger: {
+          trigger: mainGridRef.current,
+          start: "top 80%",
+        }
+      }
+    );
+
+    gsap.fromTo(additionalGridRef.current?.children || [],
+      { y: 50, opacity: 0, rotationX: 10 },
+      {
+        y: 0, opacity: 1, rotationX: 0,
+        duration: 0.6, stagger: 0.1,
+        scrollTrigger: {
+          trigger: additionalGridRef.current,
+          start: "top 80%",
+        }
+      }
+    );
+
+    return () => {
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+    };
+  }, [activeQuests]);
 
   // Helper to calculate rank numeric value for threat score
   const getRankValue = (rank: 'E' | 'D' | 'C' | 'B' | 'A' | 'S'): number => {
@@ -73,7 +111,7 @@ const Dashboard: React.FC = () => {
   const isIdleState = sortedActiveQuests.length === 0 && new Date().getHours() >= 12;
 
   return (
-    <main className={`flex-1 p-6 overflow-y-auto ${isIdleState ? 'opacity-75' : ''}`}>
+    <main className={`flex-1 p-4 md:p-6 overflow-y-auto ${isIdleState ? 'opacity-75' : ''}`}>
       {/* Hunter Status Bar */}
       <HunterStatusBar />
 
@@ -93,7 +131,7 @@ const Dashboard: React.FC = () => {
       )}
 
       {/* Main Grid */}
-      <div className={`grid gap-6 lg:grid-cols-3 mt-6 ${isIdleState ? 'hidden' : ''}`}>
+      <div ref={mainGridRef} className={`grid gap-6 lg:grid-cols-3 mt-6 ${isIdleState ? 'hidden' : ''}`}>
         {/* Daily Dungeon Card */}
         <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600} className="lg:col-span-2">
         <section
@@ -165,7 +203,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Additional Sections Grid */}
-      <div className="mt-12 grid gap-6 lg:grid-cols-2">
+      <div ref={additionalGridRef} className="mt-12 grid gap-6 lg:grid-cols-2">
         <section className="bg-surface border border-border-subtle rounded-md p-6 hover:border-gold-dim transition-fast">
           <h2 className="mb-4 text-lg font-display text-text-primary">Quest Log</h2>
           <QuestLog />
