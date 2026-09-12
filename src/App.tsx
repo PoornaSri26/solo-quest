@@ -24,7 +24,7 @@ const PageLoader = () => (
 
 const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const token = useStore((s) => s.token);
-  if (!token) return <Navigate to="/welcome" replace />;
+  if (!token) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
@@ -42,7 +42,7 @@ const AppLayout: React.FC = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/auth');
+    navigate('/');
   };
 
   return (
@@ -235,8 +235,9 @@ const App: React.FC = () => {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/welcome" element={<LandingPage />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
+        <Route path="/welcome" element={<LandingPage />} />
         <Route
           path="/*"
           element={
