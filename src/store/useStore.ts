@@ -63,6 +63,9 @@ interface AppState {
   questSummary: QuestSummary;
   rankUpEvent: { rank: string; level: number } | null;
 
+  // Game Design Improvements
+  feedbackIntensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null;
+
   // UI
   isQuestModalOpen: boolean;
   isEditQuestModalOpen: boolean;
@@ -120,6 +123,7 @@ interface AppState {
   // UI actions
   openEditQuestModal: (questId: string) => void;
   closeEditQuestModal: () => void;
+  setFeedbackIntensity: (intensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null) => void;
 
   // WebSocket
   connectWebSocket: () => void;
@@ -154,6 +158,8 @@ export const useStore = create<AppState>()(
         userInventory: [],
         weeklyActivity: { dailyActivity: [] },
         questSummary: { total: 0, completed: 0, active: 0, failed: 0 },
+        rankUpEvent: null,
+        feedbackIntensity: null,
         isQuestModalOpen: false,
         isEditQuestModalOpen: false,
         editingQuestId: null,
@@ -220,6 +226,7 @@ export const useStore = create<AppState>()(
             weeklyActivity: { dailyActivity: [] },
             questSummary: { total: 0, completed: 0, active: 0, failed: 0 },
             rankUpEvent: null,
+            feedbackIntensity: null,
             isQuestModalOpen: false,
             isEditQuestModalOpen: false,
             editingQuestId: null,
@@ -543,10 +550,46 @@ export const useStore = create<AppState>()(
         },
 
         completeQuest: async (questId) => {
+          // Get quest data before completion for feedback calculation
+          const quest = get().quests.find(q => q.id === questId);
+          const stats = get().stats;
+          
+          // Calculate feedback intensity based on game design principles
+          let feedbackIntensity: 'minimal' | 'standard' | 'enhanced' | 'epic' = 'standard';
+          
+          if (quest && stats) {
+            const expectedTime = 60; // Default 1 hour expected time
+            const timeTaken = quest.completedAt 
+              ? (new Date(quest.completedAt).getTime() - new Date(quest.createdAt).getTime()) / (1000 * 60)
+              : expectedTime;
+            
+            const difficultyMultiplier = { E: 0.5, D: 0.7, C: 1.0, B: 1.3, A: 1.6, S: 2.0 }[quest.rank] || 1.0;
+            const questDifficulty = stats.level * difficultyMultiplier;
+            
+            const timeRatio = timeTaken / expectedTime;
+            const difficultyRatio = questDifficulty / stats.level;
+
+            // Epic feedback: Quick completion of challenging quest
+            if (timeRatio < 0.5 && difficultyRatio > 1.2) feedbackIntensity = 'epic';
+            // Enhanced feedback: Good time on appropriate difficulty
+            else if (timeRatio < 0.8 && difficultyRatio >= 0.8) feedbackIntensity = 'enhanced';
+            // Standard feedback: Normal completion
+            else if (timeRatio <= 1.5) feedbackIntensity = 'standard';
+            // Minimal feedback: Slow completion
+            else feedbackIntensity = 'minimal';
+          }
+
           // Server handles reward logic, we just update status
           await get().updateQuest(questId, { status: 'COMPLETED' as QuestStatus });
+          
+          // Trigger feedback
+          set({ feedbackIntensity });
+          
           // Stats will be updated via WebSocket
           await get().fetchStats();
+          
+          // Clear feedback after animation
+          setTimeout(() => set({ feedbackIntensity: null }), 2500);
         },
 
         failQuest: async (questId) => {
@@ -763,6 +806,10 @@ export const useStore = create<AppState>()(
 
         closeEditQuestModal: () => {
           set({ isEditQuestModalOpen: false, editingQuestId: null });
+        },
+
+        setFeedbackIntensity: (intensity) => {
+          set({ feedbackIntensity: intensity });
         },
       }),
       {
