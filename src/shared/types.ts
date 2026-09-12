@@ -130,3 +130,40 @@ export interface UserInventory {
 export interface InventoryItem extends UserInventory {
   item: ShopItem;
 }
+
+// Game design improvements types
+export interface QuestCompletionContext {
+  isDaily: boolean;
+  contributesToStreak: boolean;
+  unlocksLore: boolean;
+  completesAchievement: boolean;
+}
+
+export interface RecentQuestCompletion {
+  type: string;
+  timestamp: number;
+}
+
+export interface AchievementData {
+  exploration: number;
+  mastery: number;
+  social: number;
+  persistence: number;
+}
+
+export interface PlayerProgressMetrics {
+  totalQuestsCompleted: number;
+  uniqueQuestTypes: number;
+  highestStreak: number;
+  daysActive: number;
+  socialInteractions: number;
+  recentSuccessRate: number;
+  recentCompletions: RecentQuestCompletion[];
+}
+
+export interface FeedbackIntensity {
+  level: 'minimal' | 'standard' | 'enhanced' | 'epic';
+  animationDuration: number;
+  soundEffect: string;
+  particleIntensity: number;
+}

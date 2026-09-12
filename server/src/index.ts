@@ -258,6 +258,109 @@ const getRankFromLevel = (level: number): string => {
   return 'S';
 };
 
+// Anti-grind mechanics: Calculate diminishing returns for repeated quest completion
+const calculateDiminishingReturns = (
+  questType: string,
+  recentCompletions: Array<{ type: string; timestamp: number }>,
+  baseReward: number
+): number => {
+  const now = Date.now();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  
+  // Count completions of this quest type in the last 24 hours
+  const recentCount = recentCompletions.filter(
+    q => q.type === questType && (now - q.timestamp) < oneDayMs
+  ).length;
+  
+  // Apply diminishing returns: 100%, 80%, 60%, 40%, 20% of base reward
+  const multiplier = Math.max(0.2, 1 - (recentCount * 0.2));
+  return Math.floor(baseReward * multiplier);
+};
+
+// Dynamic difficulty adjustment based on player performance
+const calculateDynamicDifficulty = (
+  playerLevel: number,
+  recentSuccessRate: number,
+  questRank: string
+): number => {
+  const rankMultiplier: Record<string, number> = {
+    E: 0.5, D: 0.7, C: 1.0, B: 1.3, A: 1.6, S: 2.0,
+  };
+  
+  const successAdjustment = recentSuccessRate > 0.8 ? 1.2 : 
+                           recentSuccessRate < 0.4 ? 0.8 : 1.0;
+  
+  const levelScaling = Math.min(1.5, 1 + (playerLevel * 0.02));
+  
+  return (rankMultiplier[questRank] || 1.0) * successAdjustment * levelScaling;
+};
+
+// Dual-purpose quest system for emergent gameplay
+const calculateDualPurposeBonus = (
+  completionContext: {
+    isDaily: boolean;
+    contributesToStreak: boolean;
+    unlocksLore: boolean;
+    completesAchievement: boolean;
+  }
+): { xpBonus: number; goldBonus: number } => {
+  let xpBonus = 0;
+  let goldBonus = 0;
+  
+  const purposesServed = Object.values(completionContext).filter(Boolean).length;
+  
+  if (purposesServed >= 2) {
+    xpBonus += 15;
+    goldBonus += 10;
+  }
+  
+  if (purposesServed >= 3) {
+    xpBonus += 25;
+    goldBonus += 20;
+  }
+  
+  return { xpBonus, goldBonus };
+};
+
+// Side quest variety system
+const calculateVarietyBonus = (
+  recentQuestTypes: string[],
+  currentQuestType: string
+): number => {
+  const uniqueTypes = new Set(recentQuestTypes).size;
+  const totalRecent = recentQuestTypes.length;
+  
+  if (uniqueTypes >= 4 && totalRecent >= 5) {
+    return 20;
+  }
+  
+  if (uniqueTypes >= 3 && totalRecent >= 4) {
+    return 10;
+  }
+  
+  const sameTypeCount = recentQuestTypes.filter(t => t === currentQuestType).length;
+  if (sameTypeCount >= 3) {
+    return -10;
+  }
+  
+  return 0;
+};
+
+// Progression scaling for balanced rewards
+const calculateScaledReward = (
+  baseReward: number,
+  playerLevel: number,
+  questRank: string
+): number => {
+  const levelScaling = Math.min(2.0, 1 + (playerLevel * 0.05));
+  
+  const rankMultiplier: Record<string, number> = {
+    E: 0.8, D: 0.9, C: 1.0, B: 1.2, A: 1.5, S: 2.0,
+  };
+  
+  return Math.floor(baseReward * levelScaling * (rankMultiplier[questRank] || 1.0));
+};
+
 const baseXpByRank: Record<string, number> = {
   E: 10, D: 25, C: 50, B: 100, A: 200, S: 500,
 };
@@ -685,8 +788,57 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
       await prisma.$transaction(async (tx) => {
         const stats = await tx.hunterStats.findUnique({ where: { userId } });
         if (stats) {
-          const newExp = stats.exp + existingQuest.expReward;
-          const newGold = stats.gold + existingQuest.goldReward;
+          // Get recent quest completions for anti-grind and variety calculations
+          const recentQuests = await tx.quest.findMany({
+            where: {
+              userId,
+              status: 'COMPLETED',
+              completedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            },
+            select: { category: true, completedAt: true },
+            orderBy: { completedAt: 'desc' },
+            take: 10
+          });
+
+          const recentCompletions = recentQuests.map(q => ({
+            type: q.category,
+            timestamp: q.completedAt ? new Date(q.completedAt).getTime() : Date.now()
+          }));
+
+          const recentQuestTypes = recentQuests.map(q => q.category);
+
+          // Apply game design improvements
+          let finalXpReward = existingQuest.expReward;
+          let finalGoldReward = existingQuest.goldReward;
+
+          // Anti-grind mechanics
+          finalXpReward = calculateDiminishingReturns(
+            existingQuest.category,
+            recentCompletions,
+            finalXpReward
+          );
+
+          // Side quest variety bonus
+          const varietyBonus = calculateVarietyBonus(recentQuestTypes, existingQuest.category);
+          finalXpReward += varietyBonus;
+          finalGoldReward += Math.floor(varietyBonus / 2);
+
+          // Dual-purpose bonus
+          const dualPurposeBonus = calculateDualPurposeBonus({
+            isDaily: existingQuest.deadline !== null,
+            contributesToStreak: stats.streak > 0,
+            unlocksLore: false, // Could be expanded with lore system
+            completesAchievement: false // Could be expanded with achievement system
+          });
+          finalXpReward += dualPurposeBonus.xpBonus;
+          finalGoldReward += dualPurposeBonus.goldBonus;
+
+          // Progression scaling
+          finalXpReward = calculateScaledReward(finalXpReward, stats.level, existingQuest.rank);
+          finalGoldReward = calculateScaledReward(finalGoldReward, stats.level, existingQuest.rank);
+
+          const newExp = stats.exp + finalXpReward;
+          const newGold = stats.gold + finalGoldReward;
           const { level, xpToNext, progressPercent } = calculateLevelAndProgress(newExp);
           const newRank = getRankFromLevel(level);
           const oldLevel = stats.level;
@@ -710,10 +862,15 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
 
           emitToUser(userId, 'stats:updated', updatedStats);
 
+          // Enhanced notification with bonus breakdown
+          let bonusMessage = '';
+          if (varietyBonus > 0) bonusMessage += ` Variety +${varietyBonus} XP`;
+          if (dualPurposeBonus.xpBonus > 0) bonusMessage += ` Dual-purpose +${dualPurposeBonus.xpBonus} XP`;
+          
           const notif = await tx.notification.create({
             data: {
               userId,
-              message: `Quest "${existingQuest.title}" completed! XP +${existingQuest.expReward}. Gold +${existingQuest.goldReward}.`,
+              message: `Quest "${existingQuest.title}" completed! XP +${finalXpReward}${bonusMessage}. Gold +${finalGoldReward}.`,
               type: 'REWARD',
             },
           });
