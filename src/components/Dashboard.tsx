@@ -11,6 +11,7 @@ import { QuestLog } from '../sections/QuestLog';
 import { LoreCompendium } from '../sections/LoreCompendium';
 import { Leaderboard } from '../sections/Leaderboard';
 import { Forge } from '../sections/Forge';
+import ResourceActions from './ResourceActions';
 import { useStore } from '../store/useStore';
 
 const Dashboard: React.FC = () => {
@@ -168,6 +169,11 @@ const Dashboard: React.FC = () => {
         <section className="bg-surface border border-border-subtle rounded-md p-6 hover:border-gold-dim transition-fast">
           <h2 className="mb-4 text-lg font-display text-text-primary">Quest Log</h2>
           <QuestLog />
+        </section>
+
+        <section className="bg-surface border border-border-subtle rounded-md p-6 hover:border-gold-dim transition-fast">
+          <h2 className="mb-4 text-lg font-display text-text-primary">Resource Management</h2>
+          <ResourceActions />
         </section>
 
         <section className="bg-surface border border-border-subtle rounded-md p-6 hover:border-gold-dim transition-fast">
