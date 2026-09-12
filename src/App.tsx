@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import AuthPage from './pages/AuthPage';
 import LandingPage from './pages/LandingPage';
 import SystemToastContainer from './components/SystemToastContainer';
+import QuestFeedback from './components/QuestFeedback';
 import { getAvatarUrl } from './lib/avatars';
 import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X } from 'lucide-react';
 
@@ -29,7 +30,7 @@ const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const AppLayout: React.FC = () => {
-  const { token, stats, hunter, logout, initializeApp, connectWebSocket } = useStore();
+  const { token, stats, hunter, logout, initializeApp, connectWebSocket, feedbackIntensity } = useStore();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
@@ -227,6 +228,14 @@ const AppLayout: React.FC = () => {
       </main>
 
       <SystemToastContainer />
+      
+      {/* Game Design: Quest Feedback System */}
+      {feedbackIntensity && (
+        <QuestFeedback 
+          intensity={feedbackIntensity}
+          onComplete={() => useStore.getState().setFeedbackIntensity(null)}
+        />
+      )}
     </div>
   );
 };
