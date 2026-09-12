@@ -194,7 +194,9 @@ model MilestoneProgress {
   milestone   Milestone   @relation("MilestoneProgress", fields: [milestoneId], references: [id])
   stats       HunterStats @relation("UserMilestoneProgress", fields: [userId], references: [id])
 
-  @@unique([userId, milestoneId])
+  @@unique([userId, milestoneId], name: "userId_milestoneId")
+  @@index([userId])
+  @@index([milestoneId])
 }
 
 model MasteryChallenge {

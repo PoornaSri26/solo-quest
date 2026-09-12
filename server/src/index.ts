@@ -1994,6 +1994,22 @@ app.post('/api/milestones/:id/complete', authenticateToken, async (req, res) => 
       return res.status(404).json({ error: 'Milestone not found' });
     }
 
+    // Check if already completed
+    const existingProgress = await withRetry(() =>
+      prisma.milestoneProgress.findUnique({
+        where: {
+          userId_milestoneId: {
+            userId,
+            milestoneId: id,
+          },
+        },
+      })
+    );
+
+    if (existingProgress?.completed) {
+      return res.status(400).json({ error: 'Milestone already completed' });
+    }
+
     const [progress, stats] = await withRetry(() =>
       prisma.$transaction([
         prisma.milestoneProgress.upsert({
@@ -2055,6 +2071,73 @@ app.post('/api/milestones/:id/complete', authenticateToken, async (req, res) => 
   }
 });
 
+app.post('/api/milestones', authenticateToken, async (req, res) => {
+  try {
+    const { name, description, requirement, xpReward, goldReward, mementoId } = req.body;
+
+    const milestone = await withRetry(() =>
+      prisma.milestone.create({
+        data: {
+          name,
+          description,
+          requirement,
+          xpReward,
+          goldReward,
+          mementoId,
+        },
+      })
+    );
+
+    res.json({ success: true, milestone });
+  } catch (error) {
+    logger.error('Create milestone error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/milestones/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, requirement, xpReward, goldReward, mementoId } = req.body;
+
+    const milestone = await withRetry(() =>
+      prisma.milestone.update({
+        where: { id },
+        data: {
+          ...(name && { name }),
+          ...(description && { description }),
+          ...(requirement && { requirement }),
+          ...(xpReward !== undefined && { xpReward }),
+          ...(goldReward !== undefined && { goldReward }),
+          ...(mementoId !== undefined && { mementoId }),
+        },
+      })
+    );
+
+    res.json({ success: true, milestone });
+  } catch (error) {
+    logger.error('Update milestone error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/milestones/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await withRetry(() =>
+      prisma.milestone.delete({
+        where: { id },
+      })
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete milestone error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/api/mastery-challenges', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -2092,6 +2175,73 @@ app.get('/api/mastery-challenges/progress', authenticateToken, async (req, res) 
     res.json(progress);
   } catch (error) {
     logger.error('Get mastery challenge progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/mastery-challenges', authenticateToken, async (req, res) => {
+  try {
+    const { name, description, requirement, xpReward, goldReward, difficulty } = req.body;
+
+    const challenge = await withRetry(() =>
+      prisma.masteryChallenge.create({
+        data: {
+          name,
+          description,
+          requirement,
+          xpReward,
+          goldReward,
+          difficulty,
+        },
+      })
+    );
+
+    res.json({ success: true, challenge });
+  } catch (error) {
+    logger.error('Create mastery challenge error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/mastery-challenges/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, requirement, xpReward, goldReward, difficulty } = req.body;
+
+    const challenge = await withRetry(() =>
+      prisma.masteryChallenge.update({
+        where: { id },
+        data: {
+          ...(name && { name }),
+          ...(description && { description }),
+          ...(requirement && { requirement }),
+          ...(xpReward !== undefined && { xpReward }),
+          ...(goldReward !== undefined && { goldReward }),
+          ...(difficulty && { difficulty }),
+        },
+      })
+    );
+
+    res.json({ success: true, challenge });
+  } catch (error) {
+    logger.error('Update mastery challenge error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/mastery-challenges/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await withRetry(() =>
+      prisma.masteryChallenge.delete({
+        where: { id },
+      })
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete mastery challenge error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2206,6 +2356,71 @@ app.get('/api/mementos/user', authenticateToken, async (req, res) => {
     res.json(userMementos);
   } catch (error) {
     logger.error('Get user mementos error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/mementos', authenticateToken, async (req, res) => {
+  try {
+    const { name, description, icon, rarity, category } = req.body;
+
+    const memento = await withRetry(() =>
+      prisma.memento.create({
+        data: {
+          name,
+          description,
+          icon,
+          rarity,
+          category,
+        },
+      })
+    );
+
+    res.json({ success: true, memento });
+  } catch (error) {
+    logger.error('Create memento error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/mementos/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, icon, rarity, category } = req.body;
+
+    const memento = await withRetry(() =>
+      prisma.memento.update({
+        where: { id },
+        data: {
+          ...(name && { name }),
+          ...(description && { description }),
+          ...(icon && { icon }),
+          ...(rarity && { rarity }),
+          ...(category && { category }),
+        },
+      })
+    );
+
+    res.json({ success: true, memento });
+  } catch (error) {
+    logger.error('Update memento error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/mementos/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await withRetry(() =>
+      prisma.memento.delete({
+        where: { id },
+      })
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete memento error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2560,6 +2775,48 @@ app.patch('/api/knowledge', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/knowledge', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req.body);
+    const { questPatternsLearned, optimalRoutesDiscovered, shortcutsUnlocked, efficiencyRating } = req.body;
+
+    const knowledge = await withRetry(() =>
+      prisma.knowledgeProgress.create({
+        data: {
+          userId,
+          questPatternsLearned: questPatternsLearned || 0,
+          optimalRoutesDiscovered: optimalRoutesDiscovered || 0,
+          shortcutsUnlocked: shortcutsUnlocked || 0,
+          efficiencyRating: efficiencyRating || 0,
+          lastUpdated: new Date(),
+        },
+      })
+    );
+
+    res.json({ success: true, knowledge });
+  } catch (error) {
+    logger.error('Create knowledge progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/knowledge', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    await withRetry(() =>
+      prisma.knowledgeProgress.delete({
+        where: { userId },
+      })
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete knowledge progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ========================
 // Social Features
 // ========================
@@ -2629,6 +2886,49 @@ app.patch('/api/social/stats', authenticateToken, async (req, res) => {
     res.json({ success: true, socialStats });
   } catch (error) {
     logger.error('Update social stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/social/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req.body);
+    const { friendsAdded, questsShared, achievementsShared, leaderboardRank, socialScore } = req.body;
+
+    const socialStats = await withRetry(() =>
+      prisma.socialStats.create({
+        data: {
+          userId,
+          friendsAdded: friendsAdded || 0,
+          questsShared: questsShared || 0,
+          achievementsShared: achievementsShared || 0,
+          leaderboardRank: leaderboardRank || 0,
+          socialScore: socialScore || 0,
+          lastUpdated: new Date(),
+        },
+      })
+    );
+
+    res.json({ success: true, socialStats });
+  } catch (error) {
+    logger.error('Create social stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/social/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    await withRetry(() =>
+      prisma.socialStats.delete({
+        where: { userId },
+      })
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete social stats error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
