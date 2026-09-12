@@ -1,4 +1,4 @@
-﻿datasource db {
+datasource db {
   provider = "sqlite"
   url      = "file:./dev.db"
 }
@@ -21,6 +21,10 @@ model User {
   dailyDungeons DailyDungeon[] @relation("UserDungeons")
   notifications Notification[] @relation("UserNotifications")
   inventory     UserInventory[] @relation("UserInventory")
+  questDecisions QuestDecision[] @relation("UserQuestDecisions")
+  resourceUsage ResourceUsage[] @relation("UserResourceUsage")
+  knowledge     KnowledgeProgress? @relation("UserKnowledge")
+  socialStats   SocialStats? @relation("UserSocialStats")
 }
 
 model HunterStats {
@@ -30,7 +34,7 @@ model HunterStats {
   exp              Int      @default(0)
   expToNext        Int      @default(100)
   progressPercent  Float    @default(0)
-  rank             String     @default("E") // Rank: E, D, C, B, A, S
+  rank             String     @default("E")
   hp               Int      @default(100)
   hpMax            Int      @default(100)
   gold             Int      @default(0)
@@ -48,22 +52,18 @@ model HunterStats {
   statLuck         Int      @default(0)
   lastActiveDate   DateTime @default(now())
   user             User     @relation("HunterStats", fields: [userId], references: [id])
+  milestoneProgress MilestoneProgress[] @relation("UserMilestoneProgress")
+  masteryChallengeProgress MasteryChallengeProgress[] @relation("UserMasteryChallengeProgress")
+  userMementos     UserMemento[] @relation("HunterStatsUserMementos")
 }
-
-// Enums replaced with strings for SQLite compatibility
-// Rank: E, D, C, B, A, S
-
-// QuestCategory: Combat, Intel, Craft, Survival, Social, Wildcard
-
-// QuestStatus: SHADOW, ACTIVE, IN_PROGRESS, COMPLETED, FAILED, ARCHIVED
 
 model Quest {
   id           String   @id @default(uuid())
   userId       String   @map("fk_user_id")
   title        String
-  rank         String // Rank: E, D, C, B, A, S
-  category     String // QuestCategory: Combat, Intel, Craft, Survival, Social, Wildcard
-  status       String // QuestStatus: SHADOW, ACTIVE, IN_PROGRESS, COMPLETED, FAILED, ARCHIVED @default(SHADOW)
+  rank         String
+  category     String
+  status       String   @default("SHADOW")
   deadline     DateTime?
   notes        String?
   gateId       String?    @map("fk_gate_id")
@@ -75,7 +75,8 @@ model Quest {
   updatedAt    DateTime @updatedAt
   subtasks     QuestSubtask[] @relation("QuestSubtasks")
   gate         Gate?      @relation("QuestGate", fields: [gateId], references: [id])
-  user       User       @relation("UserQuests", fields: [userId], references: [id])
+  user         User       @relation("UserQuests", fields: [userId], references: [id])
+  decisions    QuestDecision[] @relation("QuestDecisions")
 
   @@index([userId, status])
   @@index([userId, gateId])
@@ -91,15 +92,13 @@ model QuestSubtask {
   quest     Quest    @relation("QuestSubtasks", fields: [questId], references: [id])
 }
 
-// GateStatus: ACTIVE, CLEARED, COLLAPSED
-
 model Gate {
   id        String   @id @default(uuid())
   userId    String   @map("fk_user_id")
   name      String
-  rank      String // Rank: E, D, C, B, A, S
+  rank      String
   deadline  DateTime?
-  status    String // GateStatus: ACTIVE, CLEARED, COLLAPSED @default(ACTIVE)
+  status    String   @default("ACTIVE")
   createdAt DateTime @default(now())
   user      User     @relation("UserGates", fields: [userId], references: [id])
   quests    Quest[]  @relation("QuestGate")
@@ -112,20 +111,18 @@ model DailyDungeon {
   id        String   @id @default(uuid())
   userId    String   @map("fk_user_id")
   name      String
-  shift     String? // Shift: MORNING, AFTERNOON, NIGHT, ALL_DAY @default(ALL_DAY)
+  shift     String?   @default("ALL_DAY")
   active    Boolean  @default(true)
   tasks     DungeonTask[] @relation("DungeonTasks")
   logs      DungeonLog[] @relation("DungeonLogs")
   user      User     @relation("UserDungeons", fields: [userId], references: [id])
 }
 
-// Shift: MORNING, AFTERNOON, NIGHT, ALL_DAY
-
 model DungeonTask {
   id        String   @id @default(uuid())
   dungeonId String   @map("fk_dungeon_id")
   title     String
-  rank      String // Rank: E, D, C, B, A, S
+  rank      String
   position  Int
   completed Boolean  @default(false)
   dungeon   DailyDungeon @relation("DungeonTasks", fields: [dungeonId], references: [id])
@@ -145,7 +142,7 @@ model Notification {
   id        String   @id @default(uuid())
   userId    String   @map("fk_user_id")
   message   String
-  type      String // NotificationType: INFO, WARNING, REWARD, PENALTY
+  type      String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
   user      User     @relation("UserNotifications", fields: [userId], references: [id])
@@ -154,18 +151,14 @@ model Notification {
   @@index([userId, createdAt])
 }
 
-// NotificationType: INFO, WARNING, REWARD, PENALTY
-
 model ShopItem {
   id        String   @id @default(uuid())
   name      String
-  category  String // ShopCategory: THEME, FRAME, TITLE, ICON_SET
+  category  String
   costGold  Int
   description String?
   userInventory UserInventory[] @relation("Item")
 }
-
-// ShopCategory: THEME, FRAME, TITLE, ICON_SET
 
 model UserInventory {
   id        String   @id @default(uuid())
@@ -177,4 +170,125 @@ model UserInventory {
   item      ShopItem @relation("Item", fields: [itemId], references: [id])
 
   @@unique([userId, itemId])
+}
+
+model Milestone {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  requirement String
+  xpReward    Int
+  goldReward  Int
+  mementoId   String?  @map("fk_memento_id")
+  memento     Memento? @relation("MilestoneMementos", fields: [mementoId], references: [id])
+  progress    MilestoneProgress[] @relation("MilestoneProgress")
+}
+
+model MilestoneProgress {
+  id          String   @id @default(uuid())
+  userId      String   @map("fk_user_id")
+  milestoneId String   @map("fk_milestone_id")
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  progress    Int      @default(0)
+  milestone   Milestone   @relation("MilestoneProgress", fields: [milestoneId], references: [id])
+  stats       HunterStats @relation("UserMilestoneProgress", fields: [userId], references: [id])
+
+  @@unique([userId, milestoneId])
+}
+
+model MasteryChallenge {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  requirement String
+  xpReward    Int
+  goldReward  Int
+  difficulty  String
+  progress    MasteryChallengeProgress[] @relation("MasteryChallengeProgress")
+}
+
+model MasteryChallengeProgress {
+  id          String   @id @default(uuid())
+  userId      String   @map("fk_user_id")
+  challengeId String   @map("fk_challenge_id")
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  attempts    Int      @default(0)
+  bestScore   Int?
+  challenge   MasteryChallenge @relation("MasteryChallengeProgress", fields: [challengeId], references: [id])
+  stats       HunterStats @relation("UserMasteryChallengeProgress", fields: [userId], references: [id])
+
+  @@unique([userId, challengeId])
+}
+
+model Memento {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  icon        String
+  rarity      String
+  category    String
+  milestones Milestone[] @relation("MilestoneMementos")
+  userMementos UserMemento[] @relation("UserMementos")
+}
+
+model UserMemento {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  mementoId String   @map("fk_memento_id")
+  unlockedAt DateTime @default(now())
+  memento   Memento   @relation("UserMementos", fields: [mementoId], references: [id])
+  stats     HunterStats @relation("HunterStatsUserMementos", fields: [userId], references: [id])
+
+  @@unique([userId, mementoId])
+}
+
+model QuestDecision {
+  id          String   @id @default(uuid())
+  userId      String   @map("fk_user_id")
+  questId     String   @map("fk_quest_id")
+  decisionType String
+  choice      String
+  timestamp   DateTime @default(now())
+  user        User     @relation("UserQuestDecisions", fields: [userId], references: [id])
+  quest       Quest    @relation("QuestDecisions", fields: [questId], references: [id])
+
+  @@index([userId, timestamp])
+  @@index([questId, timestamp])
+}
+
+model ResourceUsage {
+  id          String   @id @default(uuid())
+  userId      String   @map("fk_user_id")
+  resourceType String
+  amount      Int
+  purpose     String
+  timestamp   DateTime @default(now())
+  user        User     @relation("UserResourceUsage", fields: [userId], references: [id])
+
+  @@index([userId, resourceType, timestamp])
+}
+
+model KnowledgeProgress {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("fk_user_id")
+  questPatternsLearned Int      @default(0)
+  optimalRoutesDiscovered Int @default(0)
+  shortcutsUnlocked Int      @default(0)
+  efficiencyRating Float    @default(0.0)
+  lastUpdated DateTime @default(now())
+  user        User     @relation("UserKnowledge", fields: [userId], references: [id])
+}
+
+model SocialStats {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("fk_user_id")
+  friendsAdded Int      @default(0)
+  questsShared Int      @default(0)
+  achievementsShared Int @default(0)
+  leaderboardRank Int?
+  socialScore Int      @default(0)
+  lastUpdated DateTime @default(now())
+  user        User     @relation("UserSocialStats", fields: [userId], references: [id])
 }

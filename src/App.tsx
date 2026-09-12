@@ -7,7 +7,7 @@ import LandingPage from './pages/LandingPage';
 import SystemToastContainer from './components/SystemToastContainer';
 import QuestFeedback from './components/QuestFeedback';
 import { getAvatarUrl } from './lib/avatars';
-import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X } from 'lucide-react';
+import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X, Trophy, Gem, Target, Brain, Users, Flag } from 'lucide-react';
 
 // Lazy load pages for code splitting
 const QuestLogPage = lazy(() => import('./pages/QuestLogPage'));
@@ -15,6 +15,12 @@ const HunterProfilePage = lazy(() => import('./pages/HunterProfilePage'));
 const GatesPage = lazy(() => import('./pages/GatesPage'));
 const ShadowRealmPage = lazy(() => import('./pages/ShadowRealmPage'));
 const ShopPage = lazy(() => import('./pages/ShopPage'));
+const MilestonesPage = lazy(() => import('./pages/MilestonesPage'));
+const MasteryChallengesPage = lazy(() => import('./pages/MasteryChallengesPage'));
+const MementosPage = lazy(() => import('./pages/MementosPage'));
+const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
+const SocialPage = lazy(() => import('./pages/SocialPage'));
+const ProgressionPage = lazy(() => import('./pages/ProgressionPage'));
 
 // Loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -177,6 +183,66 @@ const AppLayout: React.FC = () => {
             <Store className="w-4 h-4" />
             Shop
           </NavLink>
+          <NavLink
+            to="/milestones"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Trophy className="w-4 h-4" />
+            Milestones
+          </NavLink>
+          <NavLink
+            to="/mastery"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Target className="w-4 h-4" />
+            Mastery
+          </NavLink>
+          <NavLink
+            to="/mementos"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Gem className="w-4 h-4" />
+            Mementos
+          </NavLink>
+          <NavLink
+            to="/knowledge"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Brain className="w-4 h-4" />
+            Knowledge
+          </NavLink>
+          <NavLink
+            to="/social"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Users className="w-4 h-4" />
+            Social
+          </NavLink>
+          <NavLink
+            to="/progression"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Flag className="w-4 h-4" />
+            Progression
+          </NavLink>
         </nav>
 
         {/* Gold + Logout */}
@@ -221,6 +287,36 @@ const AppLayout: React.FC = () => {
           <Route path="/shop" element={
             <Suspense fallback={<PageLoader />}>
               <ShopPage />
+            </Suspense>
+          } />
+          <Route path="/milestones" element={
+            <Suspense fallback={<PageLoader />}>
+              <MilestonesPage />
+            </Suspense>
+          } />
+          <Route path="/mastery" element={
+            <Suspense fallback={<PageLoader />}>
+              <MasteryChallengesPage />
+            </Suspense>
+          } />
+          <Route path="/mementos" element={
+            <Suspense fallback={<PageLoader />}>
+              <MementosPage />
+            </Suspense>
+          } />
+          <Route path="/knowledge" element={
+            <Suspense fallback={<PageLoader />}>
+              <KnowledgePage />
+            </Suspense>
+          } />
+          <Route path="/social" element={
+            <Suspense fallback={<PageLoader />}>
+              <SocialPage />
+            </Suspense>
+          } />
+          <Route path="/progression" element={
+            <Suspense fallback={<PageLoader />}>
+              <ProgressionPage />
             </Suspense>
           } />
           <Route path="*" element={<div className="p-6 text-center text-text-secondary">404 - Page not found</div>} />
