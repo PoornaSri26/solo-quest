@@ -24,6 +24,12 @@ Solo Quest is a gamified productivity application that turns your daily tasks in
 - **Streak Bonuses**: Maintain daily activity for bonus rewards
 - **Leaderboards**: Compete with other hunters on global rankings
 
+### 📱 Mobile Support
+- **Capacitor Wrapper**: Native iOS and Android apps
+- **Responsive Design**: Works seamlessly on all devices
+- **Offline Support**: Built-in service worker for offline functionality
+- **Push Notifications**: Quest reminders and achievement alerts
+
 ### ⚡ Real-Time Features
 - **Live Updates**: Real-time stat updates via WebSocket
 - **Notifications**: Instant feedback on quest completion and rewards
@@ -91,6 +97,14 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment guides i
 - Redis configuration
 - Environment setup
 - Monitoring and scaling
+
+### Mobile Deployment
+
+See [MOBILE.md](./MOBILE.md) for mobile app deployment guides including:
+- iOS setup with Xcode
+- Android setup with Android Studio
+- Capacitor configuration
+- Native build process
 
 ## 📁 Project Structure
 
@@ -297,9 +311,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 💰 Monetization
 
-Solo Quest is available for commercial use. For licensing inquiries, custom development, or enterprise features, please contact:
+Solo Quest offers multiple subscription tiers and commercial options.
 
-**Email**: poornasri.n24@gmail.com
+### Subscription Tiers
+
+- **Free**: Basic quest management, daily dungeons, core features
+- **Hunter Pass ($9.99/month)**: Advanced analytics, unlimited quests, custom themes, priority support
+- **Enterprise**: Custom solutions, white-label options, dedicated support
 
 ### Licensing Options
 
@@ -307,6 +325,10 @@ Solo Quest is available for commercial use. For licensing inquiries, custom deve
 - **Small Business**: Contact for pricing
 - **Enterprise**: Custom solutions available
 - **White Label**: Fully branded solutions
+
+For licensing inquiries, custom development, or enterprise features, please contact:
+
+**Email**: poornasri.n24@gmail.com
 
 ## 📞 Support
 
@@ -330,8 +352,10 @@ For support, feature requests, or bug reports:
 - [x] Comprehensive testing
 
 ### Phase 3: Enhancement (Current)
-- [ ] Cyberpunk 3D UI
-- [ ] Mobile app
+- [x] Mobile app wrapper (Capacitor)
+- [x] Configurable failure penalties
+- [x] Simple Mode onboarding
+- [x] Monetization infrastructure
 - [ ] Social features
 - [ ] Advanced analytics
 
