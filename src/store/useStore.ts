@@ -66,6 +66,9 @@ interface AppState {
   // Game Design Improvements
   feedbackIntensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null;
 
+  // UI Mode
+  uiMode: 'minimal' | 'dense';
+
   // UI
   isQuestModalOpen: boolean;
   isEditQuestModalOpen: boolean;
@@ -124,6 +127,7 @@ interface AppState {
   openEditQuestModal: (questId: string) => void;
   closeEditQuestModal: () => void;
   setFeedbackIntensity: (intensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null) => void;
+  setUIMode: (mode: 'minimal' | 'dense') => void;
 
   // WebSocket
   connectWebSocket: () => void;
@@ -160,6 +164,7 @@ export const useStore = create<AppState>()(
         questSummary: { total: 0, completed: 0, active: 0, failed: 0 },
         rankUpEvent: null,
         feedbackIntensity: null,
+        uiMode: 'minimal',
         isQuestModalOpen: false,
         isEditQuestModalOpen: false,
         editingQuestId: null,
@@ -811,11 +816,16 @@ export const useStore = create<AppState>()(
         setFeedbackIntensity: (intensity) => {
           set({ feedbackIntensity: intensity });
         },
+
+        setUIMode: (mode) => {
+          set({ uiMode: mode });
+        },
       }),
       {
         name: 'solo-quest-storage',
         partialize: (state) => ({
           token: state.token,
+          uiMode: state.uiMode,
         }),
       }
     )
