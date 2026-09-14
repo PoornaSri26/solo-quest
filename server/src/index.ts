@@ -13,12 +13,32 @@ import { env } from './env';
 import { initRedisClient, closeRedisClient, getRateLimiter, initRateLimiters } from './rateLimiter';
 import { initCacheClient, closeCacheClient, getFromCache, setCache, deleteFromCache, deleteCachePattern, invalidateUserCache, getCacheStats } from './cache';
 import { csrfProtection } from './csrf';
+import {
+  requestIdMiddleware,
+  requestLoggingMiddleware,
+  bodyValidationMiddleware,
+  requestTimingMiddleware,
+  requestTimeoutMiddleware,
+  cachingMiddleware,
+  keepAliveMiddleware,
+  errorHandlerMiddleware,
+  notFoundMiddleware,
+  securityHeadersMiddleware,
+  healthCheckMiddleware,
+} from './middleware';
 
 dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
 const port = parseInt(env.PORT, 10);
+
+// Extend Express Request type
+declare module 'express-serve-static-core' {
+  interface Request {
+    id?: string;
+  }
+}
 
 // Configure Prisma with connection pooling for minimal latency
 const prisma = new PrismaClient({
@@ -119,13 +139,39 @@ const emitToUser = (userId: string, event: string, data: any) => {
 };
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "http://localhost:5173", "http://localhost:5000"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
 app.use(compression());
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5000', 'http://localhost'],
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Custom middleware
+app.use(requestIdMiddleware);
+app.use(securityHeadersMiddleware);
+app.use(requestLoggingMiddleware);
+app.use(bodyValidationMiddleware);
 
 // Rate limiting middleware using Redis or in-memory fallback
 const createRateLimitMiddleware = (limiterType: 'api' | 'auth' | 'createQuest' | 'shop') => {
@@ -152,48 +198,18 @@ app.use('/api/', createRateLimitMiddleware('api'));
 // Apply CSRF protection to all API routes
 app.use('/api/', csrfProtection);
 
-// Enable HTTP keep-alive for connection reuse
-app.use((req, res, next) => {
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Keep-Alive', 'timeout=5, max=1000');
-  next();
-});
+// Performance and caching middleware
+app.use(keepAliveMiddleware);
+app.use(requestTimingMiddleware);
+app.use(requestTimeoutMiddleware);
+app.use(cachingMiddleware);
 
-// Request timing middleware for performance monitoring
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    if (duration > 100) {
-      logger.info(`Slow request: ${req.method} ${req.path} - ${duration}ms`);
-    }
-  });
-  next();
-});
+// Health check endpoint
+app.get('/health', healthCheckMiddleware);
 
-// Request timeout handling
-app.use((req, res, next) => {
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      res.status(504).json({ error: 'Request timeout' });
-    }
-  }, 30000); // 30 second timeout
-
-  res.on('finish', () => clearTimeout(timeout));
-  next();
-});
-
-// HTTP caching headers for static-like data
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/shop')) {
-    res.setHeader('Cache-Control', 'public, max-age=600'); // 10 minutes
-  } else if (req.path.startsWith('/api/hunter/me') || req.path.startsWith('/api/gates')) {
-    res.setHeader('Cache-Control', 'private, max-age=120'); // 2 minutes
-  } else if (req.path.startsWith('/api/quests')) {
-    res.setHeader('Cache-Control', 'private, max-age=60'); // 1 minute
-  }
-  next();
-});
+// Error handling (must be last)
+app.use(errorHandlerMiddleware);
+app.use(notFoundMiddleware);
 
 // Auth middleware
 const authenticateToken = (req: any, res: any, next: any) => {
