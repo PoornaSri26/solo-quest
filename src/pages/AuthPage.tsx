@@ -21,6 +21,7 @@ const AuthPage: React.FC = () => {
     try {
       if (isLogin) {
         await login(email, password);
+        navigate('/dashboard');
       } else {
         if (!displayName.trim()) {
           setError('Display name is required');
@@ -28,8 +29,8 @@ const AuthPage: React.FC = () => {
           return;
         }
         await register(email, password, displayName);
+        navigate('/onboarding');
       }
-      navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || (isLogin ? 'Login failed' : 'Registration failed'));
     } finally {
