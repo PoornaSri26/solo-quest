@@ -18,7 +18,8 @@ const QuestCard: React.FC<{
   quest: Quest;
   gate?: Gate;
   onDelete?: (id: string) => void;
-}> = ({ quest, gate, onDelete }) => {
+  isHighlighted?: boolean;
+}> = ({ quest, gate, onDelete, isHighlighted = false }) => {
   const {
     completeQuest,
     failQuest,
@@ -119,7 +120,7 @@ const QuestCard: React.FC<{
         transitionSpeed={400}
         className="group w-full"
       >
-      <div className="
+      <div className={`
         relative overflow-hidden
         bg-gradient-to-br from-surface to-raised
         border border-border-subtle
@@ -130,7 +131,8 @@ const QuestCard: React.FC<{
         before:bg-gradient-to-br before:from-violet-gate/0 before:to-gold-primary/0
         before:hover:from-violet-gate/5 before:hover:to-gold-primary/5
         before:transition-all before:duration-300
-      "
+        ${isHighlighted ? 'border-2 border-gold-primary shadow-lg shadow-gold-primary/20' : ''}
+      `}
       style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)' }}
       >
         <div className="relative z-10 flex items-start gap-4">

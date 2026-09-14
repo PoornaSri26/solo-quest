@@ -26,6 +26,7 @@ const Dashboard: React.FC = () => {
     fetchQuests,
     fetchGates,
     deleteQuest,
+    uiMode,
   } = useStore();
 
   const mainGridRef = useRef<HTMLDivElement>(null);
@@ -112,26 +113,78 @@ const Dashboard: React.FC = () => {
 
   return (
     <main className={`flex-1 p-4 md:p-6 overflow-y-auto ${isIdleState ? 'opacity-75' : ''}`}>
-      {/* Hunter Status Bar */}
-      <HunterStatusBar />
+      {/* Minimal Mode - Calm, focused view */}
+      {uiMode === 'minimal' && (
+        <div className="max-w-3xl mx-auto">
+          <HunterStatusBar />
+          
+          {/* Idle State Warning */}
+          {isIdleState && (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="font-system text-text-system bg-surface border-l-4 border-gold-primary border-r-0 border-t-0 border-b-0 px-6 py-4 mb-6">
+                [System: No active quests. The Shadow stirs.]
+              </div>
+              <button
+                onClick={() => {/* Open quest creation modal */}}
+                className="px-4 py-2 bg-gold-primary text-void hover:bg-gold-primary/90 rounded-sm transition-fast font-display"
+              >
+                Register a quest
+              </button>
+            </div>
+          )}
 
-      {/* Idle State Warning */}
-      {isIdleState && (
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="font-system text-text-system bg-surface border-l-4 border-gold-primary border-r-0 border-t-0 border-b-0 px-6 py-4 mb-6">
-            [System: No active quests. The Shadow stirs.]
+          {/* Single Quest Focus */}
+          {!isIdleState && sortedActiveQuests.length > 0 && (
+            <div className="space-y-4 mt-6">
+              <h2 className="text-2xl font-display text-text-primary mb-4">Current Quest</h2>
+              <Tilt tiltMaxAngleX={2} tiltMaxAngleY={2} transitionSpeed={400}>
+                <QuestCard
+                  quest={sortedActiveQuests[0]}
+                  onDelete={deleteQuest}
+                  isHighlighted={true}
+                />
+              </Tilt>
+              
+              {sortedActiveQuests.length > 1 && (
+                <div className="text-center mt-6">
+                  <p className="text-text-secondary text-sm">
+                    {sortedActiveQuests.length - 1} more quest{sortedActiveQuests.length - 1 !== 1 ? 's' : ''} available
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Daily Dungeon - Simplified */}
+          <div className="mt-8">
+            <DailyDungeon />
           </div>
-          <button
-            onClick={() => {/* Open quest creation modal */}}
-            className="px-4 py-2 bg-gold-primary text-void hover:bg-gold-primary/90 rounded-sm transition-fast font-display"
-          >
-            Register a quest
-          </button>
         </div>
       )}
 
-      {/* Main Grid */}
-      <div ref={mainGridRef} className={`grid gap-6 lg:grid-cols-3 mt-6 ${isIdleState ? 'hidden' : ''}`}>
+      {/* Dense Mode - Full hunter dashboard */}
+      {uiMode === 'dense' && (
+        <>
+          {/* Hunter Status Bar */}
+          <HunterStatusBar />
+
+          {/* Idle State Warning */}
+          {isIdleState && (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="font-system text-text-system bg-surface border-l-4 border-gold-primary border-r-0 border-t-0 border-b-0 px-6 py-4 mb-6">
+                [System: No active quests. The Shadow stirs.]
+              </div>
+              <button
+                onClick={() => {/* Open quest creation modal */}}
+                className="px-4 py-2 bg-gold-primary text-void hover:bg-gold-primary/90 rounded-sm transition-fast font-display"
+              >
+                Register a quest
+              </button>
+            </div>
+          )}
+
+          {/* Main Grid */}
+          <div ref={mainGridRef} className={`grid gap-6 lg:grid-cols-3 mt-6 ${isIdleState ? 'hidden' : ''}`}>
         {/* Daily Dungeon Card */}
         <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600} className="lg:col-span-2">
         <section
@@ -238,6 +291,8 @@ const Dashboard: React.FC = () => {
 
       {/* Quick Capture */}
       <QuickCapture />
+        </>
+      )}
     </main>
   );
 };

@@ -7,6 +7,8 @@ import LandingPage from './pages/LandingPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SystemToastContainer from './components/SystemToastContainer';
 import QuestFeedback from './components/QuestFeedback';
+import HunterStatusWindow from './components/HunterStatusWindow';
+import UIModeToggle from './components/UIModeToggle';
 import { getAvatarUrl } from './lib/avatars';
 import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X, Trophy, Gem, Target, Brain, Users, Flag } from 'lucide-react';
 
@@ -111,23 +113,15 @@ const AppLayout: React.FC = () => {
 
         {/* Rank Badge */}
         {stats && (
-          <div className="mb-4 p-3 bg-raised rounded-sm border border-border-subtle">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-text-secondary">Rank</span>
-              <span className="font-display text-gold-primary">{stats.rank}</span>
-            </div>
-            <div className="flex items-center justify-between text-xs mt-1">
-              <span className="text-text-secondary">Level</span>
-              <span className="font-data text-text-primary">{stats.level}</span>
-            </div>
-            <div className="mt-2 bg-gold-dim rounded-sm h-1">
-              <div
-                className="bg-gold-primary h-1 rounded-sm transition-slow"
-                style={{ width: `${stats.progressPercent || 0}%` }}
-              />
-            </div>
+          <div className="mb-4">
+            <HunterStatusWindow />
           </div>
         )}
+
+        {/* UI Mode Toggle */}
+        <div className="mb-4">
+          <UIModeToggle />
+        </div>
 
         <nav className="flex-1 space-y-1">
           <NavLink
