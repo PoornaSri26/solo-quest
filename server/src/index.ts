@@ -4271,6 +4271,401 @@ const startServer = async () => {
       }
     });
 
+    // ========================
+    // White-label and Enterprise Management
+    // ========================
+
+    /**
+     * @swagger
+     * /api/organizations:
+     *   post:
+     *     summary: Create an organization
+     *     tags: [Organizations]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/organizations', authenticateToken, requireSubscriptionTier('enterprise'), async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { name, slug, description, plan } = req.body;
+
+        if (!name || !slug) {
+          return res.status(400).json({ error: 'Name and slug are required' });
+        }
+
+        const organization = await withRetry(() =>
+          prisma.organization.create({
+            data: {
+              name: name.trim(),
+              slug: slug.trim().toLowerCase(),
+              description: description?.trim(),
+              plan: plan || 'enterprise',
+            },
+          })
+        );
+
+        // Update user to be organization member
+        await withRetry(() =>
+          prisma.user.update({
+            where: { id: userId },
+            data: { organizationId: organization.id },
+          })
+        );
+
+        // Update member count
+        await withRetry(() =>
+          prisma.organization.update({
+            where: { id: organization.id },
+            data: { memberCount: { increment: 1 } },
+          })
+        );
+
+        res.status(201).json(organization);
+      } catch (error) {
+        logger.error('Create organization error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/organizations/{id}/whitelabel:
+     *   post:
+     *     summary: Configure white-label settings
+     *     tags: [Organizations]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/organizations/:id/whitelabel', authenticateToken, requireSubscriptionTier('enterprise'), async (req, res) => {
+      try {
+        const { id: organizationId } = req.params;
+        const { logoUrl, themeColors, customDomain, customEmail, features } = req.body;
+
+        const organization = await withRetry(() =>
+          prisma.organization.findUnique({
+            where: { id: organizationId },
+          })
+        );
+
+        if (!organization) {
+          return res.status(404).json({ error: 'Organization not found' });
+        }
+
+        const whiteLabelConfig = await withRetry(() =>
+          prisma.whiteLabelConfig.upsert({
+            where: { organizationId },
+            create: {
+              organizationId,
+              organizationName: organization.name,
+              logoUrl,
+              themeColors: themeColors ? JSON.stringify(themeColors) : null,
+              customDomain,
+              customEmail,
+              features: features ? JSON.stringify(features) : null,
+            },
+            update: {
+              logoUrl,
+              themeColors: themeColors ? JSON.stringify(themeColors) : null,
+              customDomain,
+              customEmail,
+              features: features ? JSON.stringify(features) : null,
+            },
+          })
+        );
+
+        res.status(201).json(whiteLabelConfig);
+      } catch (error) {
+        logger.error('Configure white-label error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/organizations/{id}/whitelabel:
+     *   get:
+     *     summary: Get white-label configuration
+     *     tags: [Organizations]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.get('/api/organizations/:id/whitelabel', authenticateToken, async (req, res) => {
+      try {
+        const { id: organizationId } = req.params;
+
+        const whiteLabelConfig = await withRetry(() =>
+          prisma.whiteLabelConfig.findUnique({
+            where: { organizationId },
+          })
+        );
+
+        if (!whiteLabelConfig) {
+          return res.status(404).json({ error: 'White-label configuration not found' });
+        }
+
+        // Parse JSON fields
+        const config = {
+          ...whiteLabelConfig,
+          themeColors: whiteLabelConfig.themeColors ? JSON.parse(whiteLabelConfig.themeColors) : null,
+          features: whiteLabelConfig.features ? JSON.parse(whiteLabelConfig.features) : null,
+        };
+
+        res.json(config);
+      } catch (error) {
+        logger.error('Get white-label config error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    // ========================
+    // API Access Tier
+    // ========================
+
+    /**
+     * @swagger
+     * /api/organizations/{id}/api-keys:
+     *   post:
+     *     summary: Create API key for organization
+     *     tags: [API Access]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/organizations/:id/api-keys', authenticateToken, requireSubscriptionTier('enterprise'), async (req, res) => {
+      try {
+        const { id: organizationId } = req.params;
+        const { name, permissions, rateLimit, expiresAt } = req.body;
+
+        if (!name) {
+          return res.status(400).json({ error: 'API key name is required' });
+        }
+
+        const organization = await withRetry(() =>
+          prisma.organization.findUnique({
+            where: { id: organizationId },
+          })
+        );
+
+        if (!organization) {
+          return res.status(404).json({ error: 'Organization not found' });
+        }
+
+        const apiKey = await withRetry(() =>
+          prisma.apiKey.create({
+            data: {
+              key: `sk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              name: name.trim(),
+              organizationId,
+              permissions: permissions ? JSON.stringify(permissions) : JSON.stringify(['read']),
+              rateLimit: rateLimit || 1000,
+              expiresAt: expiresAt ? new Date(expiresAt) : null,
+            },
+          })
+        );
+
+        res.status(201).json(apiKey);
+      } catch (error) {
+        logger.error('Create API key error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/organizations/{id}/api-keys:
+     *   get:
+     *     summary: Get API keys for organization
+     *     tags: [API Access]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.get('/api/organizations/:id/api-keys', authenticateToken, requireSubscriptionTier('enterprise'), async (req, res) => {
+      try {
+        const { id: organizationId } = req.params;
+
+        const apiKeys = await withRetry(() =>
+          prisma.apiKey.findMany({
+            where: { organizationId, revoked: false },
+            orderBy: { createdAt: 'desc' },
+          })
+        );
+
+        const keysWithPermissions = apiKeys.map(key => ({
+          ...key,
+          permissions: key.permissions ? JSON.parse(key.permissions) : [],
+        }));
+
+        res.json(keysWithPermissions);
+      } catch (error) {
+        logger.error('Get API keys error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    // ========================
+    // Quest Pack Marketplace
+    // ========================
+
+    /**
+     * @swagger
+     * /api/marketplace/quest-packs:
+     *   get:
+     *     summary: Get quest packs from marketplace
+     *     tags: [Marketplace]
+     */
+    app.get('/api/marketplace/quest-packs', async (req, res) => {
+      try {
+        const { category, page = 1, limit = 20 } = req.query;
+
+        const questPacks = await withRetry(() =>
+          prisma.questPack.findMany({
+            where: {
+              isApproved: true,
+              ...(category && { category: category as string }),
+            },
+            skip: (Number(page) - 1) * Number(limit),
+            take: Number(limit),
+            orderBy: { downloadCount: 'desc' },
+          })
+        );
+
+        const packsWithTemplates = questPacks.map(pack => ({
+          ...pack,
+          questTemplates: pack.questTemplates ? JSON.parse(pack.questTemplates) : [],
+        }));
+
+        res.json(packsWithTemplates);
+      } catch (error) {
+        logger.error('Get quest packs error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/marketplace/quest-packs:
+     *   post:
+     *     summary: Create quest pack for marketplace
+     *     tags: [Marketplace]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/marketplace/quest-packs', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { name, description, category, price, currency, questTemplates } = req.body;
+
+        if (!name || !description || !category || !questTemplates) {
+          return res.status(400).json({ error: 'Name, description, category, and quest templates are required' });
+        }
+
+        const questPack = await withRetry(() =>
+          prisma.questPack.create({
+            data: {
+              creatorId: userId,
+              name: name.trim(),
+              description: description.trim(),
+              category: category.trim(),
+              price: price || 0,
+              currency: currency || 'gold',
+              questTemplates: JSON.stringify(questTemplates),
+              isApproved: false, // Requires approval
+            },
+          })
+        );
+
+        res.status(201).json(questPack);
+      } catch (error) {
+        logger.error('Create quest pack error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/marketplace/quest-packs/{id}/purchase:
+     *   post:
+     *     summary: Purchase quest pack
+     *     tags: [Marketplace]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/marketplace/quest-packs/:id/purchase', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { id: questPackId } = req.params;
+
+        const questPack = await withRetry(() =>
+          prisma.questPack.findUnique({
+            where: { id: questPackId },
+          })
+        );
+
+        if (!questPack) {
+          return res.status(404).json({ error: 'Quest pack not found' });
+        }
+
+        if (!questPack.isApproved) {
+          return res.status(400).json({ error: 'Quest pack is not approved' });
+        }
+
+        // Check if already purchased
+        const existingPurchase = await withRetry(() =>
+          prisma.questPackPurchase.findUnique({
+            where: {
+              questPackId_userId: {
+                questPackId,
+                userId,
+              },
+            },
+          })
+        );
+
+        if (existingPurchase) {
+          return res.status(400).json({ error: 'Already purchased' });
+        }
+
+        // Handle payment (gold or Stripe)
+        if (questPack.currency === 'gold') {
+          const stats = await withRetry(() =>
+            prisma.hunterStats.findUnique({
+              where: { userId },
+            })
+          );
+
+          if (!stats || stats.gold < questPack.price) {
+            return res.status(400).json({ error: 'Insufficient gold' });
+          }
+
+          await withRetry(() =>
+            prisma.$transaction([
+              prisma.hunterStats.update({
+                where: { userId },
+                data: { gold: { decrement: questPack.price } },
+              }),
+              prisma.questPackPurchase.create({
+                data: {
+                  questPackId,
+                  userId,
+                },
+              }),
+              prisma.questPack.update({
+                where: { id: questPackId },
+                data: { downloadCount: { increment: 1 } },
+              }),
+            ])
+          );
+        } else {
+          // Stripe payment would be handled here
+          return res.status(501).json({ error: 'Stripe payment not implemented for quest packs' });
+        }
+
+        res.json({ success: true, message: 'Quest pack purchased successfully' });
+      } catch (error) {
+        logger.error('Purchase quest pack error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
     httpServer.listen(port, () => {
       logger.info(`Server is running on port ${port}`);
     });
