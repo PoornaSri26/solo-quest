@@ -1573,37 +1573,60 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // If quest failed, apply penalty with transaction
+    // If quest failed, apply penalty based on user settings
     if (status === 'FAILED' && existingQuest.status !== 'FAILED') {
-      await prisma.$transaction(async (tx) => {
-        const stats = await tx.hunterStats.findUnique({ where: { userId } });
-        if (stats) {
-          const { level, xpToNext, progressPercent } = calculateLevelAndProgress(stats.exp);
-          const updatedStats = await tx.hunterStats.update({
-            where: { userId },
-            data: { 
-              hp: Math.max(stats.hp - 10, 0),
-              level,
-              expToNext: xpToNext,
-              progressPercent: progressPercent,
-            },
-          });
-
-          // Invalidate user cache
-          await invalidateUserCache(userId);
-
-          emitToUser(userId, 'stats:updated', updatedStats);
-
-          const notif = await tx.notification.create({
-            data: {
-              userId,
-              message: `Quest "${existingQuest.title}" failed. HP -10.`,
-              type: 'PENALTY',
-            },
-          });
-          emitToUser(userId, 'notification:new', notif);
-        }
+      // Get user settings for penalty severity
+      const userSettings = await prisma.userSettings.findUnique({
+        where: { userId },
       });
+
+      const penaltySeverity = userSettings?.penaltySeverity || 'forgiving';
+
+      // Only apply penalties if not in forgiving mode
+      if (penaltySeverity !== 'forgiving') {
+        await prisma.$transaction(async (tx) => {
+          const stats = await tx.hunterStats.findUnique({ where: { userId } });
+          if (stats) {
+            const { level, xpToNext, progressPercent } = calculateLevelAndProgress(stats.exp);
+            
+            let hpPenalty = 0;
+            let streakPenalty = false;
+
+            if (penaltySeverity === 'moderate') {
+              streakPenalty = true;
+              hpPenalty = 5;
+            } else if (penaltySeverity === 'hardcore') {
+              streakPenalty = true;
+              hpPenalty = 10;
+            }
+
+            const updatedStats = await tx.hunterStats.update({
+              where: { userId },
+              data: { 
+                hp: Math.max(stats.hp - hpPenalty, 0),
+                ...(streakPenalty && { streak: 0 }),
+                level,
+                expToNext: xpToNext,
+                progressPercent: progressPercent,
+              },
+            });
+
+            // Invalidate user cache
+            await invalidateUserCache(userId);
+
+            emitToUser(userId, 'stats:updated', updatedStats);
+
+            const notif = await tx.notification.create({
+              data: {
+                userId,
+                message: `Quest "${existingQuest.title}" failed. ${penaltySeverity === 'hardcore' ? 'HP -10, streak reset' : penaltySeverity === 'moderate' ? 'Streak reset' : 'No penalties'}.`,
+                type: 'PENALTY',
+              },
+            });
+            emitToUser(userId, 'notification:new', notif);
+          }
+        });
+      }
     }
 
     res.json(quest);
@@ -1630,18 +1653,41 @@ app.delete('/api/quests/:id', authenticateToken, async (req, res) => {
       if (now > deadline) {
         // Auto-fail the overdue quest first
         await prisma.$transaction(async (tx) => {
-          const stats = await tx.hunterStats.findUnique({ where: { userId } });
-          if (stats) {
-            const { level, xpToNext, progressPercent } = calculateLevelAndProgress(stats.exp);
-            await tx.hunterStats.update({
-              where: { userId },
-              data: { 
-                hp: Math.max(stats.hp - 10, 0),
-                level,
-                expToNext: xpToNext,
-                progressPercent: progressPercent,
-              },
-            });
+          // Get user settings for penalty severity
+          const userSettings = await tx.userSettings.findUnique({
+            where: { userId },
+          });
+
+          const penaltySeverity = userSettings?.penaltySeverity || 'forgiving';
+
+          // Only apply penalties if not in forgiving mode
+          if (penaltySeverity !== 'forgiving') {
+            const stats = await tx.hunterStats.findUnique({ where: { userId } });
+            if (stats) {
+              const { level, xpToNext, progressPercent } = calculateLevelAndProgress(stats.exp);
+              
+              let hpPenalty = 0;
+              let streakPenalty = false;
+
+              if (penaltySeverity === 'moderate') {
+                streakPenalty = true;
+                hpPenalty = 5;
+              } else if (penaltySeverity === 'hardcore') {
+                streakPenalty = true;
+                hpPenalty = 10;
+              }
+
+              await tx.hunterStats.update({
+                where: { userId },
+                data: { 
+                  hp: Math.max(stats.hp - hpPenalty, 0),
+                  ...(streakPenalty && { streak: 0 }),
+                  level,
+                  expToNext: xpToNext,
+                  progressPercent: progressPercent,
+                },
+              });
+            }
           }
           
           await tx.quest.update({
@@ -1650,7 +1696,11 @@ app.delete('/api/quests/:id', authenticateToken, async (req, res) => {
           });
         });
         
-        return res.status(400).json({ error: 'Cannot delete overdue quest. It has been auto-failed.' });
+        return res.status(400).json({ 
+          error: 'Cannot delete overdue quest. It has been auto-failed.',
+          penaltySeverity,
+          message: penaltySeverity === 'forgiving' ? 'No penalties applied' : 'Penalties applied based on your settings'
+        });
       }
     }
 
