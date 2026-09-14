@@ -8,6 +8,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import compression from 'compression';
 import helmet from 'helmet';
+import Stripe from 'stripe';
 import logger from './logger';
 import { env } from './env';
 import { initRedisClient, closeRedisClient, getRateLimiter, initRateLimiters } from './rateLimiter';
@@ -28,8 +29,25 @@ import {
 } from './middleware';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger';
+import {
+  createCheckoutSession,
+  handleWebhook,
+  getUserSubscription,
+  cancelSubscription,
+  SUBSCRIPTION_PLANS,
+} from './stripe';
+import {
+  requireSubscriptionTier,
+  requirePaidSubscription,
+  getUserEntitlements,
+  checkUserLimits,
+} from './entitlements';
 
 dotenv.config();
+
+const stripe = new Stripe(env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2024-06-20' as any,
+});
 
 const app = express();
 const httpServer = createServer(app);
@@ -213,13 +231,6 @@ app.get('/api-docs.json', (req, res) => {
   res.send(swaggerSpec);
 });
 
-// Health check endpoint
-app.get('/health', healthCheckMiddleware);
-
-// Error handling (must be last)
-app.use(errorHandlerMiddleware);
-app.use(notFoundMiddleware);
-
 // Auth middleware
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -233,6 +244,433 @@ const authenticateToken = (req: any, res: any, next: any) => {
     next();
   });
 };
+
+// Health check endpoint
+app.get('/health', healthCheckMiddleware);
+
+// Subscription and Payment Routes
+/**
+ * @swagger
+ * /api/subscription/plans:
+ *   get:
+ *     summary: Get available subscription plans
+ *     tags: [Subscription]
+ *     responses:
+ *       200:
+ *         description: Available plans retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plans:
+ *                   type: object
+ */
+app.get('/api/subscription/plans', async (req, res) => {
+  try {
+    res.json({ plans: SUBSCRIPTION_PLANS });
+  } catch (error) {
+    logger.error('Get plans error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription:
+ *   get:
+ *     summary: Get current user's subscription status
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Subscription status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plan:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                 endDate:
+ *                   type: string
+ *                   format: date-time
+ */
+app.get('/api/subscription', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const subscription = await getUserSubscription(userId);
+    res.json(subscription);
+  } catch (error) {
+    logger.error('Get subscription error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/checkout:
+ *   post:
+ *     summary: Create a checkout session for subscription
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - plan
+ *               - billingCycle
+ *             properties:
+ *               plan:
+ *                 type: string
+ *                 enum: [hunter_pass, guild]
+ *               billingCycle:
+ *                 type: string
+ *                 enum: [monthly, yearly]
+ *     responses:
+ *       200:
+ *         description: Checkout session created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 url:
+ *                   type: string
+ *                 sessionId:
+ *                   type: string
+ */
+app.post('/api/subscription/checkout', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { plan, billingCycle } = req.body;
+
+    if (!plan || !billingCycle) {
+      return res.status(400).json({ error: 'Missing plan or billingCycle' });
+    }
+
+    const session = await createCheckoutSession(userId, plan, billingCycle);
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (error) {
+    logger.error('Create checkout session error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/cancel:
+ *   post:
+ *     summary: Cancel current subscription
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Subscription canceled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    await cancelSubscription(userId);
+    res.json({ message: 'Subscription canceled successfully' });
+  } catch (error) {
+    logger.error('Cancel subscription error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/webhook:
+ *   post:
+ *     summary: Stripe webhook endpoint
+ *     tags: [Subscription]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Webhook processed successfully
+ */
+/**
+ * @swagger
+ * /api/entitlements:
+ *   get:
+ *     summary: Get user's entitlements and feature limits
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Entitlements retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plan:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                 features:
+ *                   type: object
+ *                 settings:
+ *                   type: object
+ */
+app.get('/api/entitlements', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const entitlements = await getUserEntitlements(userId);
+    res.json(entitlements);
+  } catch (error) {
+    logger.error('Get entitlements error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/entitlements/check/{action}:
+ *   get:
+ *     summary: Check if user can perform an action based on limits
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: action
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [create_quest, create_gate, use_streak_freeze]
+ *     responses:
+ *       200:
+ *         description: Action check completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 allowed:
+ *                   type: boolean
+ *                 reason:
+ *                   type: string
+ */
+app.get('/api/entitlements/check/:action', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { action } = req.params;
+    const allowed = await checkUserLimits(userId, action);
+    
+    res.json({ 
+      allowed,
+      reason: allowed ? 'Action allowed' : 'Subscription limit reached'
+    });
+  } catch (error) {
+    logger.error('Check limits error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/webhook:
+ *   post:
+ *     summary: Stripe webhook endpoint
+ *     tags: [Subscription]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Webhook processed successfully
+ */
+/**
+ * @swagger
+ * /api/settings:
+ *   get:
+ *     summary: Get user settings
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User settings retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 simpleMode:
+ *                   type: boolean
+ *                 penaltySeverity:
+ *                   type: string
+ *                 notificationPreference:
+ *                   type: string
+ */
+app.get('/api/settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    let settings = await prisma.userSettings.findUnique({
+      where: { userId },
+    });
+
+    if (!settings) {
+      // Create default settings
+      settings = await prisma.userSettings.create({
+        data: {
+          userId,
+          simpleMode: false,
+          penaltySeverity: 'forgiving',
+          notificationPreference: 'adaptive',
+        },
+      });
+    }
+
+    res.json(settings);
+  } catch (error) {
+    logger.error('Get settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/settings:
+ *   patch:
+ *     summary: Update user settings
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               simpleMode:
+ *                 type: boolean
+ *               penaltySeverity:
+ *                 type: string
+ *                 enum: [forgiving, moderate, hardcore]
+ *               notificationPreference:
+ *                 type: string
+ *                 enum: [adaptive, aggressive, minimal]
+ *     responses:
+ *       200:
+ *         description: Settings updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ */
+app.patch('/api/settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { simpleMode, penaltySeverity, notificationPreference, timezone, locale } = req.body;
+
+    let settings = await prisma.userSettings.findUnique({
+      where: { userId },
+    });
+
+    if (!settings) {
+      settings = await prisma.userSettings.create({
+        data: {
+          userId,
+          simpleMode: simpleMode ?? false,
+          penaltySeverity: penaltySeverity ?? 'forgiving',
+          notificationPreference: notificationPreference ?? 'adaptive',
+          timezone,
+          locale,
+        },
+      });
+    } else {
+      settings = await prisma.userSettings.update({
+        where: { id: settings.id },
+        data: {
+          ...(simpleMode !== undefined && { simpleMode }),
+          ...(penaltySeverity !== undefined && { penaltySeverity }),
+          ...(notificationPreference !== undefined && { notificationPreference }),
+          ...(timezone !== undefined && { timezone }),
+          ...(locale !== undefined && { locale }),
+        },
+      });
+    }
+
+    res.json(settings);
+  } catch (error) {
+    logger.error('Update settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/webhook:
+ *   post:
+ *     summary: Stripe webhook endpoint
+ *     tags: [Subscription]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Webhook processed successfully
+ */
+app.post('/api/subscription/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'] as string;
+  
+  if (!sig) {
+    return res.status(400).json({ error: 'Missing stripe-signature header' });
+  }
+
+  if (!stripe) {
+    return res.status(500).json({ error: 'Stripe not initialized' });
+  }
+
+  try {
+    const event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      env.STRIPE_WEBHOOK_SECRET || ''
+    );
+
+    await handleWebhook(event);
+    res.json({ received: true });
+  } catch (error) {
+    logger.error('Webhook error:', error);
+    res.status(400).json({ error: 'Webhook error' });
+  }
+});
+
+// Error handling (must be last)
+app.use(errorHandlerMiddleware);
+app.use(notFoundMiddleware);
 
 // Helper to get user ID from request
 const getUserId = (req: any): string => {

@@ -25,6 +25,9 @@ model User {
   resourceUsage ResourceUsage[] @relation("UserResourceUsage")
   knowledge     KnowledgeProgress? @relation("UserKnowledge")
   socialStats   SocialStats? @relation("UserSocialStats")
+  subscription  Subscription? @relation("UserSubscription")
+  payments      Payment[] @relation("UserPayments")
+  userSettings  UserSettings? @relation("UserSettings")
 }
 
 model HunterStats {
@@ -293,4 +296,52 @@ model SocialStats {
   socialScore Int      @default(0)
   lastUpdated DateTime @default(now())
   user        User     @relation("UserSocialStats", fields: [userId], references: [id])
+}
+
+// Subscription and Payment Models
+model Subscription {
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("fk_user_id")
+  plan            String   // "free", "hunter_pass", "guild", "enterprise"
+  status          String   // "active", "canceled", "past_due", "trialing"
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  cancelAtPeriodEnd Boolean @default(false)
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  user            User     @relation("UserSubscription", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  userId          String   @map("fk_user_id")
+  amount          Int      // in cents
+  currency        String   @default("usd")
+  status          String   // "pending", "completed", "failed", "refunded"
+  paymentMethod   String   // "stripe", "paypal", "apple_pay", "google_pay"
+  paymentIntentId String?
+  metadata        String?  // JSON string for additional data
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model UserSettings {
+  id                String   @id @default(uuid())
+  userId            String   @unique @map("fk_user_id")
+  simpleMode        Boolean  @default(false) // Simple mode hides complex RPG features
+  penaltySeverity   String   @default("forgiving") // "forgiving", "moderate", "hardcore"
+  notificationPreference String @default("adaptive") // "adaptive", "aggressive", "minimal"
+  timezone          String?
+  locale            String   @default("en")
+  user              User     @relation("UserSettings", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
 }
