@@ -337,10 +337,12 @@ const AppLayout: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  const { token } = useStore();
+  
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={token ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/welcome" element={<LandingPage />} />
         <Route
