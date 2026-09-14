@@ -117,7 +117,7 @@ const AppLayout: React.FC = () => {
 
         <nav className="flex-1 space-y-1">
           <NavLink
-            to="/"
+            to="/dashboard"
             end
             className={({ isActive }) => `
               flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-all duration-200
@@ -263,7 +263,7 @@ const AppLayout: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto pt-16 md:pt-0">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/quests" element={
             <Suspense fallback={<PageLoader />}>
               <QuestLogPage />
@@ -319,7 +319,7 @@ const AppLayout: React.FC = () => {
               <ProgressionPage />
             </Suspense>
           } />
-          <Route path="*" element={<div className="p-6 text-center text-text-secondary">404 - Page not found</div>} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
 
@@ -337,16 +337,105 @@ const AppLayout: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  const { token } = useStore();
-  
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={token ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
+        {/* Public routes */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/welcome" element={<LandingPage />} />
+        
+        {/* Protected routes */}
         <Route
-          path="/*"
+          path="/dashboard"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/quests"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/gates"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/shadow"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/shop"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/milestones"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/mastery"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/mementos"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/knowledge"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/social"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/progression"
           element={
             <AuthGuard>
               <AppLayout />
