@@ -29,6 +29,12 @@ model User {
   payments      Payment[] @relation("UserPayments")
   userSettings  UserSettings? @relation("UserSettings")
   raidParticipations RaidParticipant[] @relation("RaidParticipants")
+  organizationId String?
+  organization   Organization? @relation("OrganizationMembers", fields: [organizationId], references: [id])
+  questPacks    QuestPack[] @relation("CreatorQuestPacks")
+  questPackPurchases QuestPackPurchase[] @relation("UserQuestPackPurchases")
+  
+  @@index([organizationId])
 }
 
 model HunterStats {
@@ -349,6 +355,93 @@ model RaidParticipant {
   @@unique([raidId, userId])
   @@index([raidId])
   @@index([userId])
+}
+
+// White-label and Enterprise Models
+model WhiteLabelConfig {
+  id            String   @id @default(uuid())
+  organizationId String  @unique @map("fk_organization_id")
+  organizationName String
+  logoUrl       String?
+  themeColors   String?  // JSON object with primary, secondary, accent colors
+  customDomain  String?
+  customEmail   String?
+  features      String?  // JSON object with enabled features
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  organization  Organization? @relation("OrganizationWhiteLabel", fields: [organizationId], references: [id])
+  
+  @@index([organizationId])
+}
+
+model Organization {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  slug          String   @unique
+  description   String?
+  memberCount   Int      @default(0)
+  plan          String   @default("enterprise") // "enterprise", "coaching"
+  createdAt     DateTime @default(now())
+  whiteLabelConfig WhiteLabelConfig? @relation("OrganizationWhiteLabel")
+  members       User[]   @relation("OrganizationMembers")
+  apiKeys       ApiKey[] @relation("OrganizationApiKeys")
+  
+  @@index([slug])
+}
+
+// API Access Model
+model ApiKey {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  name          String
+  organizationId String   @map("fk_organization_id")
+  permissions   String   // JSON array of permissions
+  rateLimit     Int      @default(1000)
+  lastUsed      DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+  revoked       Boolean  @default(false)
+  organization  Organization @relation("OrganizationApiKeys", fields: [organizationId], references: [id])
+  
+  @@index([organizationId])
+  @@index([key])
+}
+
+// Marketplace Model
+model QuestPack {
+  id            String   @id @default(uuid())
+  creatorId     String   @map("fk_creator_id")
+  name          String
+  description   String
+  category      String
+  price         Int      // in gold or cents for real money
+  currency      String   @default("gold") // "gold", "usd"
+  questTemplates String  // JSON array of quest templates
+  downloadCount Int      @default(0)
+  rating        Float    @default(0)
+  reviewCount   Int      @default(0)
+  isApproved    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  creator       User     @relation("CreatorQuestPacks", fields: [creatorId], references: [id])
+  purchases     QuestPackPurchase[] @relation("QuestPackPurchases")
+  
+  @@index([creatorId])
+  @@index([category])
+  @@index([isApproved])
+}
+
+model QuestPackPurchase {
+  id            String   @id @default(uuid())
+  questPackId   String   @map("fk_quest_pack_id")
+  userId        String   @map("fk_user_id")
+  purchasedAt   DateTime @default(now())
+  questPack     QuestPack @relation("QuestPackPurchases", fields: [questPackId], references: [id])
+  user          User     @relation("UserQuestPackPurchases", fields: [userId], references: [id])
+  
+  @@unique([questPackId, userId])
+  @@index([userId])
+  @@index([questPackId])
 }
 
 // Subscription and Payment Models
