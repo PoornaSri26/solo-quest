@@ -29,7 +29,7 @@ const AuthPage: React.FC = () => {
         }
         await register(email, password, displayName);
       }
-      navigate('/dashboard');
+      navigate('/');
     } catch (err: any) {
       setError(err.message || (isLogin ? 'Login failed' : 'Registration failed'));
     } finally {
