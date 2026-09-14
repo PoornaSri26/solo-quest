@@ -5,6 +5,7 @@ interface ApiRequestOptions extends RequestInit {
   timeout?: number;
   retries?: number;
   retryDelay?: number;
+  skipAuth?: boolean;
 }
 
 class ApiError extends Error {
@@ -29,6 +30,7 @@ const apiClient = async <T = any>(
     retries = 3,
     retryDelay = 1000,
     headers = {},
+    skipAuth = false,
     ...fetchOptions
   } = options;
 
@@ -56,6 +58,25 @@ const apiClient = async <T = any>(
       // Handle non-OK responses
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        
+        // Handle specific error cases
+        if (response.status === 401) {
+          throw new ApiError('Authentication required', 401, data);
+        }
+        if (response.status === 403) {
+          throw new ApiError('Access forbidden', 403, data);
+        }
+        if (response.status === 404) {
+          throw new ApiError('Resource not found', 404, data);
+        }
+        if (response.status === 429) {
+          const retryAfter = data.retryAfter || 60;
+          throw new ApiError(`Too many requests. Retry after ${retryAfter}s`, 429, data);
+        }
+        if (response.status === 500) {
+          throw new ApiError('Server error', 500, data);
+        }
+        
         throw new ApiError(
           data.error || `HTTP ${response.status}: ${response.statusText}`,
           response.status,
@@ -70,9 +91,11 @@ const apiClient = async <T = any>(
     } catch (error) {
       lastError = error as Error;
 
-      // Don't retry on abort (timeout) or 4xx errors
-      if (error instanceof ApiError && error.status && error.status >= 400 && error.status < 500) {
-        throw error;
+      // Don't retry on abort (timeout) or 4xx errors (except 429)
+      if (error instanceof ApiError && error.status) {
+        if (error.status >= 400 && error.status < 500 && error.status !== 429) {
+          throw error;
+        }
       }
 
       if (error instanceof Error && error.name === 'AbortError') {
