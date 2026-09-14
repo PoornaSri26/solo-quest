@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -293,7 +293,7 @@
 }
 
 .system-terminal {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Space Grotesk', monospace;
   font-size: clamp(14px, 2vw, 20px);
   color: var(--gold-primary);
   letter-spacing: 0.04em;
@@ -315,7 +315,7 @@
 }
 
 .hero__cta {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Space Grotesk', monospace;
   font-size: 13px;
   letter-spacing: 0.1em;
   color: var(--gold-primary);
@@ -557,5 +557,222 @@ select:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Hunter Status Window Component */
+.hunter-status-window {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.hunter-status-window .status-card {
+  background: linear-gradient(135deg, rgba(15, 15, 22, 0.95) 0%, rgba(26, 26, 46, 0.9) 100%);
+  border: 1px solid rgba(124, 110, 240, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 40px rgba(124, 110, 240, 0.1);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.hunter-status-window .status-card:hover {
+  border-color: rgba(124, 110, 240, 0.5);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 50px rgba(124, 110, 240, 0.15);
+}
+
+.hunter-status-window .status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.hunter-status-window .rank-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 20px;
+  color: white;
+  font-family: 'Rajdhani', sans-serif;
+  transition: transform 0.3s ease;
+}
+
+.hunter-status-window .rank-badge:hover {
+  transform: scale(1.1);
+}
+
+.hunter-status-window .rank-text {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.hunter-status-window .level-display {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.hunter-status-window .level-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.hunter-status-window .level-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: white;
+  line-height: 1;
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.hunter-status-window .status-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.hunter-status-window .stat-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hunter-status-window .stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.hunter-status-window .bar-container {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hunter-status-window .bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.hunter-status-window .hp-bar {
+  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+}
+
+.hunter-status-window .exp-bar {
+  background: linear-gradient(90deg, #eab308 0%, #ca8a04 100%);
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.5);
+}
+
+.hunter-status-window .stat-value {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  min-width: 60px;
+  text-align: right;
+}
+
+.hunter-status-window .status-footer {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hunter-status-window .footer-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .hunter-status-window .status-card {
+    padding: 12px;
+  }
+
+  .hunter-status-window .rank-badge {
+    width: 38px;
+    height: 38px;
+    font-size: 18px;
+  }
+
+  .hunter-status-window .level-value {
+    font-size: 20px;
+  }
+
+  .hunter-status-window .stat-value {
+    font-size: 11px;
+    min-width: 50px;
+  }
+
+  .hunter-status-window .footer-stat {
+    font-size: 12px;
+  }
+}
+
+/* UI Mode Toggle Component */
+.ui-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(15, 15, 22, 0.8);
+  border: 1px solid rgba(124, 110, 240, 0.3);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.ui-mode-toggle .mode-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ui-mode-toggle .mode-button:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(124, 110, 240, 0.1);
+}
+
+.ui-mode-toggle .mode-button.active {
+  background: linear-gradient(135deg, rgba(124, 110, 240, 0.3) 0%, rgba(45, 212, 191, 0.2) 100%);
+  color: white;
+  border: 1px solid rgba(124, 110, 240, 0.4);
+}
+
+@media (max-width: 640px) {
+  .ui-mode-toggle .mode-button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .ui-mode-toggle .mode-button span {
+    display: none;
+  }
+
+  .ui-mode-toggle .mode-button {
+    padding: 8px;
   }
 }
