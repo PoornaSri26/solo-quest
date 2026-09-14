@@ -1,0 +1,17 @@
+<key>Solo Quest</key>
+<string>Solo Quest</string>
+<key>SLSupportsSearching</key>
+<true/>
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleURLName</key>
+        <string>soloquest</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>soloquest</string>
+        </array>
+        <key>CFBundleURLIconFile</key>
+        <string>icon.png</string>
+    </dict>
+</array>
