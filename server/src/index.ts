@@ -26,6 +26,8 @@ import {
   securityHeadersMiddleware,
   healthCheckMiddleware,
 } from './middleware';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './swagger';
 
 dotenv.config();
 
@@ -203,6 +205,13 @@ app.use(keepAliveMiddleware);
 app.use(requestTimingMiddleware);
 app.use(requestTimeoutMiddleware);
 app.use(cachingMiddleware);
+
+// Swagger API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Health check endpoint
 app.get('/health', healthCheckMiddleware);
@@ -397,6 +406,56 @@ app.get('/api/health', (_req, res) => {
 // Auth routes
 // ========================
 
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - displayName
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               displayName:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post('/api/auth/register', createRateLimitMiddleware('auth'), async (req, res) => {
   try {
     const { email, password, displayName } = req.body;
@@ -477,6 +536,53 @@ app.post('/api/auth/register', createRateLimitMiddleware('auth'), async (req, re
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Login user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post('/api/auth/login', createRateLimitMiddleware('auth'), async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -523,6 +629,33 @@ app.post('/api/auth/login', createRateLimitMiddleware('auth'), async (req, res) 
 // Hunter routes
 // ========================
 
+/**
+ * @swagger
+ * /api/hunter/me:
+ *   get:
+ *     summary: Get current hunter profile and stats
+ *     tags: [Hunter]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Hunter profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 hunter:
+ *                   $ref: '#/components/schemas/Hunter'
+ *                 stats:
+ *                   $ref: '#/components/schemas/HunterStats'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/api/hunter/me', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -626,6 +759,53 @@ app.patch('/api/hunter/me', authenticateToken, async (req, res) => {
 // Quest routes
 // ========================
 
+/**
+ * @swagger
+ * /api/quests:
+ *   get:
+ *     summary: Get all quests for authenticated user
+ *     tags: [Quests]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Quests retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Quest'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/api/quests', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -711,6 +891,54 @@ app.get('/api/quests', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/quests:
+ *   post:
+ *     summary: Create a new quest
+ *     tags: [Quests]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - rank
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               rank:
+ *                 type: string
+ *                 enum: [E, D, C, B, A, S]
+ *               deadline:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       201:
+ *         description: Quest created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Quest'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post('/api/quests', authenticateToken, createRateLimitMiddleware('createQuest'), async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -1078,6 +1306,30 @@ app.delete('/api/quests/:questId/subtasks/:id', authenticateToken, async (req, r
 // Gate routes
 // ========================
 
+/**
+ * @swagger
+ * /api/gates:
+ *   get:
+ *     summary: Get all gates for authenticated user
+ *     tags: [Gates]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Gates retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Gate'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/api/gates', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -1252,6 +1504,28 @@ app.delete('/api/gates/:id', authenticateToken, async (req, res) => {
 // Daily Dungeon routes
 // ========================
 
+/**
+ * @swagger
+ * /api/dungeon:
+ *   get:
+ *     summary: Get daily dungeon for authenticated user
+ *     tags: [Dungeon]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Daily dungeon retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DailyDungeon'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/api/dungeon', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -1637,6 +1911,30 @@ app.patch('/api/notifications/read-all', authenticateToken, async (req, res) => 
 // Shop routes
 // ========================
 
+/**
+ * @swagger
+ * /api/shop:
+ *   get:
+ *     summary: Get all available shop items
+ *     tags: [Shop]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Shop items retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ShopItem'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/api/shop', authenticateToken, async (req, res) => {
   try {
     const cacheKey = 'shop:items';
@@ -1655,6 +1953,47 @@ app.get('/api/shop', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/shop/purchase/{itemId}:
+ *   post:
+ *     summary: Purchase an item from the shop
+ *     tags: [Shop]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Shop item ID
+ *     responses:
+ *       200:
+ *         description: Item purchased successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/InventoryItem'
+ *       400:
+ *         description: Insufficient gold or invalid item
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Item not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddleware('shop'), async (req, res) => {
   try {
     const userId = getUserId(req);
