@@ -31,7 +31,20 @@ const PageLoader = () => (
 
 const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const token = useStore((s) => s.token);
-  if (!token) return <Navigate to="/" replace />;
+  const isLoading = useStore((s) => s.isLoading);
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-void">
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-gold-primary border-t-transparent"></div>
+      </div>
+    );
+  }
+  
+  if (!token) {
+    return <Navigate to="/" replace />;
+  }
+  
   return <>{children}</>;
 };
 
