@@ -4,6 +4,7 @@ import { useStore } from './store/useStore';
 import Dashboard from './components/Dashboard';
 import AuthPage from './pages/AuthPage';
 import LandingPage from './pages/LandingPage';
+import OnboardingPage from './pages/OnboardingPage';
 import SystemToastContainer from './components/SystemToastContainer';
 import QuestFeedback from './components/QuestFeedback';
 import { getAvatarUrl } from './lib/avatars';
@@ -359,6 +360,7 @@ const App: React.FC = () => {
         <Route path="/" element={token ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/welcome" element={<LandingPage />} />
+        <Route path="/onboarding" element={<OnboardingPage />} />
         
         {/* Protected routes */}
         <Route
