@@ -46,3 +46,14 @@ Thumbs.db
 
 # Docker
 .dockerignore
+
+# Capacitor build artifacts
+ios/App/Public/
+ios/.gradle/
+ios/capacitor-cordova-ios-plugins/
+android/.gradle/
+android/app/build/
+android/capacitor-cordova-android-plugins/
+android/.idea/
+android/local.properties
+android/captures/

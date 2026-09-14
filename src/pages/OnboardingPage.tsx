@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+import { createAuthApi } from '../lib/api';
+import { Zap, Heart, Bell, ArrowRight, CheckCircle } from 'lucide-react';
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -14,9 +16,17 @@ export default function OnboardingPage() {
   const { initializeApp } = useStore();
 
   const handleComplete = async () => {
-    // Save preferences and continue to dashboard
-    await initializeApp();
-    navigate('/dashboard');
+    try {
+      const api = createAuthApi(() => useStore.getState().token);
+      await api.patch('/settings', preferences);
+      await initializeApp();
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Failed to save preferences:', error);
+      // Continue anyway on failure
+      await initializeApp();
+      navigate('/dashboard');
+    }
   };
 
   const steps = [
