@@ -1651,15 +1651,15 @@ app.delete('/api/quests/:id', authenticateToken, async (req, res) => {
       const now = new Date();
       const deadline = new Date(existingQuest.deadline);
       if (now > deadline) {
+        // Get user settings for penalty severity
+        const userSettings = await prisma.userSettings.findUnique({
+          where: { userId },
+        });
+
+        const penaltySeverity = userSettings?.penaltySeverity || 'forgiving';
+
         // Auto-fail the overdue quest first
         await prisma.$transaction(async (tx) => {
-          // Get user settings for penalty severity
-          const userSettings = await tx.userSettings.findUnique({
-            where: { userId },
-          });
-
-          const penaltySeverity = userSettings?.penaltySeverity || 'forgiving';
-
           // Only apply penalties if not in forgiving mode
           if (penaltySeverity !== 'forgiving') {
             const stats = await tx.hunterStats.findUnique({ where: { userId } });
@@ -3978,6 +3978,298 @@ const startServer = async () => {
       });
       logger.info('Default shop items created');
     }
+
+    // ========================
+    // Guild and Raid System
+    // ========================
+
+    /**
+     * @swagger
+     * /api/guilds:
+     *   get:
+     *     summary: Get all guilds
+     *     tags: [Guilds]
+     *     responses:
+     *       200:
+     *         description: List of guilds
+     */
+    app.get('/api/guilds', async (req, res) => {
+      try {
+        const { page = 1, limit = 20 } = req.query;
+        const guilds = await withRetry(() =>
+          prisma.guild.findMany({
+            skip: (Number(page) - 1) * Number(limit),
+            take: Number(limit),
+            orderBy: { totalExp: 'desc' },
+          })
+        );
+        res.json(guilds);
+      } catch (error) {
+        logger.error('Get guilds error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/guilds:
+     *   post:
+     *     summary: Create a new guild
+     *     tags: [Guilds]
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               name:
+     *                 type: string
+     *               description:
+     *                 type: string
+     */
+    app.post('/api/guilds', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { name, description } = req.body;
+
+        if (!name || name.trim().length === 0) {
+          return res.status(400).json({ error: 'Guild name is required' });
+        }
+
+        const existingSocialStats = await withRetry(() =>
+          prisma.socialStats.findUnique({
+            where: { userId },
+          })
+        );
+
+        if (existingSocialStats?.guildId) {
+          return res.status(400).json({ error: 'User is already in a guild' });
+        }
+
+        const guild = await withRetry(() =>
+          prisma.guild.create({
+            data: {
+              name: name.trim(),
+              description: description?.trim(),
+              memberCount: 1,
+            },
+          })
+        );
+
+        await withRetry(() =>
+          prisma.socialStats.upsert({
+            where: { userId },
+            create: {
+              userId,
+              guildId: guild.id,
+              guildRole: 'leader',
+            },
+            update: {
+              guildId: guild.id,
+              guildRole: 'leader',
+            },
+          })
+        );
+
+        res.status(201).json(guild);
+      } catch (error) {
+        logger.error('Create guild error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/guilds/{id}/join:
+     *   post:
+     *     summary: Join a guild
+     *     tags: [Guilds]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/guilds/:id/join', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { id: guildId } = req.params;
+
+        const guild = await withRetry(() =>
+          prisma.guild.findUnique({
+            where: { id: guildId },
+          })
+        );
+
+        if (!guild) {
+          return res.status(404).json({ error: 'Guild not found' });
+        }
+
+        const existingSocialStats = await withRetry(() =>
+          prisma.socialStats.findUnique({
+            where: { userId },
+          })
+        );
+
+        if (existingSocialStats?.guildId) {
+          return res.status(400).json({ error: 'User is already in a guild' });
+        }
+
+        await withRetry(() =>
+          prisma.socialStats.upsert({
+            where: { userId },
+            create: {
+              userId,
+              guildId,
+              guildRole: 'member',
+            },
+            update: {
+              guildId,
+              guildRole: 'member',
+            },
+          })
+        );
+
+        await withRetry(() =>
+          prisma.guild.update({
+            where: { id: guildId },
+            data: { memberCount: { increment: 1 } },
+          })
+        );
+
+        res.json({ success: true, message: 'Joined guild successfully' });
+      } catch (error) {
+        logger.error('Join guild error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/guilds/{id}/raids:
+     *   get:
+     *     summary: Get raids for a guild
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.get('/api/guilds/:id/raids', authenticateToken, async (req, res) => {
+      try {
+        const { id: guildId } = req.params;
+        const raids = await withRetry(() =>
+          prisma.raid.findMany({
+            where: { guildId },
+            orderBy: { startDate: 'desc' },
+          })
+        );
+        res.json(raids);
+      } catch (error) {
+        logger.error('Get raids error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/raids:
+     *   post:
+     *     summary: Create a new raid
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/raids', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { guildId, name, description, targetExp } = req.body;
+
+        if (!guildId || !name) {
+          return res.status(400).json({ error: 'Guild ID and name are required' });
+        }
+
+        const socialStats = await withRetry(() =>
+          prisma.socialStats.findUnique({
+            where: { userId },
+          })
+        );
+
+        if (!socialStats || socialStats.guildId !== guildId) {
+          return res.status(403).json({ error: 'You must be a member of this guild' });
+        }
+
+        const raid = await withRetry(() =>
+          prisma.raid.create({
+            data: {
+              guildId,
+              name: name.trim(),
+              description: description?.trim(),
+              targetExp: BigInt(targetExp || 1000),
+              status: 'active',
+              createdBy: userId,
+            },
+          })
+        );
+
+        res.status(201).json(raid);
+      } catch (error) {
+        logger.error('Create raid error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/raids/{id}/join:
+     *   post:
+     *     summary: Join a raid
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/raids/:id/join', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { id: raidId } = req.params;
+
+        const raid = await withRetry(() =>
+          prisma.raid.findUnique({
+            where: { id: raidId },
+          })
+        );
+
+        if (!raid) {
+          return res.status(404).json({ error: 'Raid not found' });
+        }
+
+        if (raid.status !== 'active') {
+          return res.status(400).json({ error: 'Raid is not active' });
+        }
+
+        const socialStats = await withRetry(() =>
+          prisma.socialStats.findUnique({
+            where: { userId },
+          })
+        );
+
+        if (!socialStats || socialStats.guildId !== raid.guildId) {
+          return res.status(403).json({ error: 'You must be a member of this guild' });
+        }
+
+        await withRetry(() =>
+          prisma.raidParticipant.create({
+            data: {
+              raidId,
+              userId,
+            },
+          })
+        );
+
+        res.json({ success: true, message: 'Joined raid successfully' });
+      } catch (error) {
+        logger.error('Join raid error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
 
     httpServer.listen(port, () => {
       logger.info(`Server is running on port ${port}`);

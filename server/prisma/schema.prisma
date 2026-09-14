@@ -28,6 +28,7 @@ model User {
   subscription  Subscription? @relation("UserSubscription")
   payments      Payment[] @relation("UserPayments")
   userSettings  UserSettings? @relation("UserSettings")
+  raidParticipations RaidParticipant[] @relation("RaidParticipants")
 }
 
 model HunterStats {
@@ -295,7 +296,59 @@ model SocialStats {
   leaderboardRank Int?
   socialScore Int      @default(0)
   lastUpdated DateTime @default(now())
+  guildId     String?
+  guildRole   String?  // "member", "officer", "leader"
   user        User     @relation("UserSocialStats", fields: [userId], references: [id])
+  guild       Guild?   @relation("GuildMembers", fields: [guildId], references: [id])
+  
+  @@index([guildId])
+}
+
+model Guild {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  memberCount Int      @default(0)
+  totalExp    BigInt   @default(0)
+  level       Int      @default(1)
+  createdAt   DateTime @default(now())
+  members     SocialStats[] @relation("GuildMembers")
+  raids       Raid[]      @relation("GuildRaids")
+  
+  @@index([name])
+}
+
+model Raid {
+  id          String   @id @default(uuid())
+  guildId     String   @map("fk_guild_id")
+  name        String
+  description String?
+  targetExp   BigInt   @default(0)
+  progressExp BigInt   @default(0)
+  status      String   // "active", "completed", "failed"
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  createdBy   String   @map("fk_user_id")
+  participants RaidParticipant[] @relation("RaidParticipants")
+  guild       Guild    @relation("GuildRaids", fields: [guildId], references: [id])
+  
+  @@index([guildId])
+  @@index([status])
+  @@index([createdBy])
+}
+
+model RaidParticipant {
+  id          String   @id @default(uuid())
+  raidId      String   @map("fk_raid_id")
+  userId      String   @map("fk_user_id")
+  expContributed BigInt @default(0)
+  joinedAt    DateTime @default(now())
+  raid        Raid     @relation("RaidParticipants", fields: [raidId], references: [id], onDelete: Cascade)
+  user        User     @relation("RaidParticipants", fields: [userId], references: [id])
+  
+  @@unique([raidId, userId])
+  @@index([raidId])
+  @@index([userId])
 }
 
 // Subscription and Payment Models
