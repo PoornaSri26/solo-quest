@@ -642,6 +642,525 @@ app.patch('/api/settings', authenticateToken, async (req, res) => {
  *       200:
  *         description: Webhook processed successfully
  */
+// ========================
+// Gameplay Systems routes (class, mood, adaptive, quest-of-day, snooze, reflection, loot)
+// ========================
+
+/**
+ * @swagger
+ * /api/hunter/class:
+ *   post:
+ *     summary: Choose or change hunter archetype (Warrior, Mage, Scholar, Assassin, Ranger)
+ *     tags: [Hunter]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - hunterClass
+ *             properties:
+ *               hunterClass:
+ *                 type: string
+ *                 enum: [NONE, WARRIOR, MAGE, SCHOLAR, ASSASSIN, RANGER]
+ *     responses:
+ *       200:
+ *         description: Class updated
+ *       400:
+ *         description: Invalid class
+ */
+app.post('/api/hunter/class', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { hunterClass } = req.body;
+
+    const validClasses = ['NONE', 'WARRIOR', 'MAGE', 'SCHOLAR', 'ASSASSIN', 'RANGER'];
+    if (!validClasses.includes(hunterClass)) {
+      return res.status(400).json({ error: 'Invalid class' });
+    }
+
+    const updated = await withRetry(() => prisma.hunterStats.update({
+      where: { userId },
+      data: { hunterClass },
+      select: { id: true, hunterClass: true, level: true, rank: true },
+    }));
+
+    await invalidateUserCache(userId);
+    emitToUser(userId, 'stats:updated', updated);
+
+    const notif = await withRetry(() => prisma.notification.create({
+      data: {
+        userId,
+        message: hunterClass === 'NONE' ? 'Class reset.' : `Class selected: ${hunterClass}. Your path is set, Hunter.`,
+        type: 'ACHIEVEMENT',
+      },
+      select: { id: true, message: true, type: true, createdAt: true },
+    }));
+    emitToUser(userId, 'notification:new', notif);
+
+    res.json(updated);
+  } catch (error) {
+    logger.error('Set class error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/hunter/check-in:
+ *   post:
+ *     summary: Self-report energy/mood (1-5) for adaptive difficulty
+ *     tags: [Hunter]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               energy:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 5
+ *               mood:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 5
+ *     responses:
+ *       200:
+ *         description: Check-in saved with adaptive rank suggestion
+ */
+app.post('/api/hunter/check-in', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { energy, mood } = req.body;
+
+    const e = Number(energy);
+    const m = Number(mood);
+    if (!Number.isInteger(e) || e < 1 || e > 5 || !Number.isInteger(m) || m < 1 || m > 5) {
+      return res.status(400).json({ error: 'energy and mood must be integers 1-5' });
+    }
+
+    await withRetry(() => prisma.hunterStats.update({
+      where: { userId },
+      data: { lastEnergyLevel: e, lastMoodLevel: m, lastCheckInAt: new Date() },
+    }));
+    await invalidateUserCache(userId);
+
+    const suggestion = suggestRankForEnergy(e);
+    res.json({ energy: e, mood: m, suggestion });
+  } catch (error) {
+    logger.error('Check-in error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/quests/suggested:
+ *   get:
+ *     summary: Adaptive quest suggestions + quest of the day, based on energy and quest history
+ *     tags: [Quests]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Suggested quests with reasoning and a curated quest of the day
+ */
+app.get('/api/quests/suggested', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const stats = await withRetry(() => prisma.hunterStats.findUnique({
+      where: { userId },
+      select: { lastEnergyLevel: true, level: true, rank: true },
+    }));
+
+    const energy = stats?.lastEnergyLevel ?? 3;
+    const suggestion = suggestRankForEnergy(energy);
+    const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S'];
+    const minIdx = rankOrder.indexOf(suggestion.minRank);
+    const maxIdx = rankOrder.indexOf(suggestion.maxRank);
+    const allowedRanks = rankOrder.slice(minIdx, maxIdx + 1);
+
+    const candidates = await withRetry(() => prisma.quest.findMany({
+      where: { userId, status: 'ACTIVE', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }));
+
+    const inBand = candidates.filter(q => allowedRanks.includes(q.rank));
+    const suggested = (inBand.length >= 3 ? inBand : candidates).slice(0, 5);
+
+    // Quest of the day: deterministic pick from active quests (#87)
+    const questOfTheDay = candidates.length > 0
+      ? candidates[hashString(new Date().toISOString().slice(0, 10) + userId) % candidates.length]
+      : null;
+
+    res.json({
+      energy,
+      suggestion,
+      reason: energy
+        ? `Based on your last check-in (energy ${energy}/5).`
+        : 'Default suggestion — check in with your energy to personalize this.',
+      quests: suggested,
+      questOfTheDay,
+    });
+  } catch (error) {
+    logger.error('Suggested quests error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/quests/{id}/snooze:
+ *   post:
+ *     summary: Snooze a quest instead of binary complete/fail (#73)
+ *     tags: [Quests]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               hours:
+ *                 type: number
+ *                 description: Hours to postpone (default 24, max 168)
+ *     responses:
+ *       200:
+ *         description: Quest snoozed
+ *       400:
+ *         description: Snooze limit reached
+ */
+app.post('/api/quests/:id/snooze', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const hours = Math.min(Math.max(Number(req.body?.hours) || 24, 1), 168);
+
+    const quest = await withRetry(() => prisma.quest.findFirst({ where: { id, userId, deletedAt: null } }));
+    if (!quest) return res.status(404).json({ error: 'Quest not found' });
+    if (!['ACTIVE', 'IN_PROGRESS'].includes(quest.status)) {
+      return res.status(400).json({ error: 'Only active quests can be snoozed' });
+    }
+    if (quest.snoozeCount >= 3) {
+      return res.status(400).json({ error: 'Snooze limit reached (3). Complete it or let it fail.' });
+    }
+
+    const snoozedUntil = new Date(Date.now() + hours * 60 * 60 * 1000);
+    const updated = await withRetry(() => prisma.quest.update({
+      where: { id },
+      data: {
+        snoozedUntil,
+        snoozeCount: { increment: 1 },
+        ...(quest.deadline ? { deadline: new Date(Math.max(new Date(quest.deadline).getTime(), snoozedUntil.getTime())) } : {}),
+      },
+    }));
+
+    await deleteCachePattern(`quests:${userId}:*`);
+    emitToUser(userId, 'quest:updated', updated);
+
+    res.json({ quest: updated, message: `Snoozed until ${snoozedUntil.toISOString()}` });
+  } catch (error) {
+    logger.error('Snooze quest error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/quests/{id}/reflection:
+ *   post:
+ *     summary: Record a reflection on why a quest failed (#66)
+ *     tags: [Quests]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - reflection
+ *             properties:
+ *               reflection:
+ *                 type: string
+ *                 maxLength: 1000
+ *     responses:
+ *       200:
+ *         description: Reflection saved
+ */
+app.post('/api/quests/:id/reflection', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const { reflection } = req.body;
+
+    if (!reflection || typeof reflection !== 'string' || !reflection.trim()) {
+      return res.status(400).json({ error: 'Reflection text is required' });
+    }
+    if (reflection.length > 1000) {
+      return res.status(400).json({ error: 'Reflection must be 1000 characters or fewer' });
+    }
+
+    const quest = await withRetry(() => prisma.quest.findFirst({ where: { id, userId } }));
+    if (!quest) return res.status(404).json({ error: 'Quest not found' });
+
+    const updated = await withRetry(() => prisma.quest.update({
+      where: { id },
+      data: { reflection: reflection.trim() },
+    }));
+
+    res.json(updated);
+  } catch (error) {
+    logger.error('Reflection error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/hunter/streak-ward:
+ *   post:
+ *     summary: Purchase a streak freeze ward with gold (#21/#61)
+ *     tags: [Hunter]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Ward purchased
+ *       400:
+ *         description: Insufficient gold or inventory full
+ */
+const STREAK_WARD_COST = 75;
+const MAX_STREAK_WARDS = 3;
+
+app.post('/api/hunter/streak-ward', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const stats = await tx.hunterStats.findUnique({
+        where: { userId },
+        select: { id: true, gold: true, streakWards: true, streak: true },
+      });
+      if (!stats) throw new Error('USER_NOT_FOUND');
+      if (stats.gold < STREAK_WARD_COST) throw new Error('INSUFFICIENT_GOLD');
+      if (stats.streakWards >= MAX_STREAK_WARDS) throw new Error('WARDS_FULL');
+
+      return tx.hunterStats.update({
+        where: { userId },
+        data: { gold: stats.gold - STREAK_WARD_COST, streakWards: { increment: 1 } },
+        select: { id: true, gold: true, streakWards: true },
+      });
+    });
+
+    await invalidateUserCache(userId);
+    emitToUser(userId, 'stats:updated', result);
+
+    const notif = await withRetry(() => prisma.notification.create({
+      data: { userId, message: `Streak Ward purchased for ${STREAK_WARD_COST} gold. Your streak is insured.`, type: 'REWARD' },
+      select: { id: true, message: true, type: true, createdAt: true },
+    }));
+    emitToUser(userId, 'notification:new', notif);
+
+    res.json({ stats: result, message: `Streak Ward acquired (${result.streakWards}/${MAX_STREAK_WARDS}).` });
+  } catch (error: any) {
+    if (error?.message === 'INSUFFICIENT_GOLD') {
+      return res.status(400).json({ error: `Insufficient gold (need ${STREAK_WARD_COST})` });
+    }
+    if (error?.message === 'WARDS_FULL') {
+      return res.status(400).json({ error: `Ward inventory full (max ${MAX_STREAK_WARDS})` });
+    }
+    if (error?.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    logger.error('Streak ward error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/quests/{id}/flavor:
+ *   get:
+ *     summary: Get procedurally generated flavor text for a quest (#25)
+ *     tags: [Quests]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Flavor text
+ */
+app.get('/api/quests/:id/flavor', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+
+    const quest = await withRetry(() => prisma.quest.findFirst({
+      where: { id, userId },
+      select: { title: true, category: true, rank: true },
+    }));
+    if (!quest) return res.status(404).json({ error: 'Quest not found' });
+
+    res.json({ flavor: generateFlavorText(quest.category, quest.rank, quest.title) });
+  } catch (error) {
+    logger.error('Flavor text error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// GDPR / Data Ownership Routes (data export + account deletion)
+// ========================
+
+/**
+ * @swagger
+ * /api/account/export:
+ *   get:
+ *     summary: Export all of the authenticated user's data (GDPR/CCPA data portability)
+ *     tags: [Account]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Full JSON export of the user's data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       401:
+ *         description: Not authenticated
+ *       500:
+ *         description: Internal server error
+ */
+app.get('/api/account/export', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const [user, stats, quests, gates, dungeons, notifications, inventory, milestoneProgress, masteryProgress, userMementos, questDecisions, resourceUsage, knowledge, socialStats, subscription, payments, settings] =
+      await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, displayName: true, hunterId: true, avatarUrl: true, createdAt: true, organizationId: true } }),
+        prisma.hunterStats.findUnique({ where: { userId } }),
+        prisma.quest.findMany({ where: { userId } }),
+        prisma.gate.findMany({ where: { userId } }),
+        prisma.dailyDungeon.findMany({ where: { userId } }),
+        prisma.notification.findMany({ where: { userId } }),
+        prisma.userInventory.findMany({ where: { userId } }),
+        prisma.milestoneProgress.findMany({ where: { userId } }),
+        prisma.masteryChallengeProgress.findMany({ where: { userId } }),
+        prisma.userMemento.findMany({ where: { userId } }),
+        prisma.questDecision.findMany({ where: { userId } }),
+        prisma.resourceUsage.findMany({ where: { userId } }),
+        prisma.knowledgeProgress.findUnique({ where: { userId } }),
+        prisma.socialStats.findUnique({ where: { userId } }),
+        prisma.subscription.findUnique({ where: { userId } }),
+        prisma.payment.findMany({ where: { userId } }),
+        prisma.userSettings.findUnique({ where: { userId } }),
+      ]);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const exportPayload = {
+      exportedAt: new Date().toISOString(),
+      format: 'solo-quest-data-export-v1',
+      profile: user,
+      stats,
+      quests,
+      gates,
+      dailyDungeons: dungeons,
+      notifications,
+      inventory,
+      milestoneProgress,
+      masteryChallengeProgress: masteryProgress,
+      unlockedMementos: userMementos,
+      questDecisions,
+      resourceUsage,
+      knowledge,
+      socialStats,
+      subscription,
+      payments,
+      settings,
+    };
+
+    res.setHeader('Content-Disposition', `attachment; filename="solo-quest-export-${userId}.json"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(exportPayload);
+  } catch (error) {
+    logger.error('Data export error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/account:
+ *   delete:
+ *     summary: Soft-delete the authenticated user's account (GDPR right to erasure)
+ *     description: Anonymizes PII and marks the account deleted. Economy history is retained in anonymized form for fraud prevention.
+ *     tags: [Account]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: Not authenticated
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Internal server error
+ */
+app.delete('/api/account', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Anonymize PII while keeping referential/economy history intact (fraud prevention)
+    const anonSuffix = userId.slice(0, 8);
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        deletedAt: new Date(),
+        email: `deleted-${anonSuffix}@deleted.soloquest.invalid`,
+        displayName: 'Deleted Hunter',
+        avatarUrl: null,
+        passwordHash: 'deleted',
+      },
+    });
+
+    // Revoke all active sessions/sockets for this user
+    emitToUser(userId, 'account:deleted', { message: 'Account deleted' });
+
+    logger.info(`Account soft-deleted and anonymized: user ${userId}`);
+    res.json({ message: 'Account deleted successfully. Your personal data has been anonymized.' });
+  } catch (error) {
+    logger.error('Account deletion error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/api/subscription/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'] as string;
   
@@ -705,10 +1224,12 @@ const calculateLevelAndProgress = (xp: number) => {
   }
   const xpForNextLevel = xpRequiredForLevel(level + 1);
   const xpForCurrentLevel = xpRequiredForLevel(level);
-  const xpInCurrentLevel = xp - xpForCurrentLevel;
-  const xpToNext = xpForNextLevel - xp; // Actual remaining XP needed
+  // Clamp at 0: new hunters start below the curve's level-1 threshold (100 XP),
+  // which previously produced a negative progressPercent
+  const xpInCurrentLevel = Math.max(0, xp - xpForCurrentLevel);
+  const xpToNext = Math.max(0, xpForNextLevel - xp); // Actual remaining XP needed
   const levelBandWidth = xpForNextLevel - xpForCurrentLevel;
-  const progressPercent = levelBandWidth === 0 ? 100 : (xpInCurrentLevel / levelBandWidth) * 100;
+  const progressPercent = levelBandWidth === 0 ? 100 : Math.min(100, Math.max(0, (xpInCurrentLevel / levelBandWidth) * 100));
   return { level, xpToNext, progressPercent };
 };
 
@@ -830,6 +1351,124 @@ const baseXpByRank: Record<string, number> = {
 
 const baseGoldByRank: Record<string, number> = {
   E: 5, D: 10, C: 20, B: 40, A: 80, S: 200,
+};
+
+// ========================
+// Gameplay Systems Helpers (combo, loot, speedrun, stats, flavor, adaptive)
+// ========================
+
+/** Map quest categories to the character stat they train. */
+const categoryToStat: Record<string, string> = {
+  Combat: 'statStrength',
+  Fitness: 'statStrength',
+  Health: 'statEndurance',
+  Survival: 'statEndurance',
+  Intel: 'statIntelligence',
+  Study: 'statIntelligence',
+  Work: 'statIntelligence',
+  Craft: 'statAgility',
+  Chores: 'statAgility',
+  Social: 'statLuck',
+  Wildcard: 'statLuck',
+};
+
+/**
+ * Daily combo/momentum multiplier (#4). Resets each day; caps at 1.5x.
+ * comboCount = completions already made today BEFORE this one.
+ */
+const calculateComboMultiplier = (comboCount: number, lastComboDate: Date | null, now = new Date()): number => {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const comboDay = lastComboDate ? new Date(lastComboDate) : null;
+  const isSameDay = comboDay !== null && !Number.isNaN(comboDay.getTime()) && comboDay.setHours(0, 0, 0, 0) === today.getTime();
+  const effectiveCombo = isSameDay ? comboCount : 0;
+  return Math.min(1.5, 1 + effectiveCombo * 0.1);
+};
+
+/**
+ * Randomized loot drops (#13) — variable-ratio reinforcement.
+ * ~35% base chance, boosted by high rank. Drop pool is cosmetic-flavored, no pay-to-win.
+ */
+const LOOT_TABLE: Array<{ id: string; name: string; rarity: string; emoji: string }> = [
+  { id: 'essence', name: 'Mana Essence', rarity: 'common', emoji: '💧' },
+  { id: 'shard', name: 'Crystal Shard', rarity: 'common', emoji: '🔷' },
+  { id: 'ember', name: 'Hunter Ember', rarity: 'common', emoji: '🔥' },
+  { id: 'relic', name: 'Ancient Relic', rarity: 'rare', emoji: '🗿' },
+  { id: 'grimoire', name: 'Sealed Grimoire', rarity: 'rare', emoji: '📖' },
+  { id: 'core', name: 'Gate Core', rarity: 'epic', emoji: '🔮' },
+];
+
+const rollLootDrop = (rank: string, rng: () => number = Math.random): { dropped: boolean; item?: typeof LOOT_TABLE[0] } => {
+  const rankBoost: Record<string, number> = { E: 0, D: 0.02, C: 0.05, B: 0.08, A: 0.12, S: 0.18 };
+  const chance = 0.35 + (rankBoost[rank] ?? 0);
+  if (rng() >= chance) return { dropped: false };
+  // Weighted pick: commons are more likely
+  const weights: Record<string, number> = { common: 5, rare: 3, epic: 1 };
+  const pool = LOOT_TABLE.flatMap(item => Array(weights[item.rarity] ?? 1).fill(item) as typeof LOOT_TABLE);
+  const item = pool[Math.floor(rng() * pool.length)];
+  return { dropped: true, item };
+};
+
+/**
+ * Speedrun bonus (#34): completing ahead of a deadline pays a fast-completion bonus.
+ * ratio < 0.5 => +25%, < 0.75 => +10%, otherwise none.
+ */
+const calculateSpeedrunBonus = (quest: { createdAt: Date | string; deadline?: Date | string | null }, now = new Date()): number => {
+  if (!quest.deadline) return 0;
+  const created = new Date(quest.createdAt).getTime();
+  const deadline = new Date(quest.deadline).getTime();
+  if (Number.isNaN(created) || Number.isNaN(deadline) || deadline <= created) return 0;
+  const ratio = (now.getTime() - created) / (deadline - created);
+  if (ratio < 0.5) return 0.25;
+  if (ratio < 0.75) return 0.1;
+  return 0;
+};
+
+/** Growth applied to the stat trained by the quest's category (#3). */
+const calculateStatGrowth = (category: string, rank: string): number => {
+  const rankGrowth: Record<string, number> = { E: 1, D: 1, C: 2, B: 2, A: 3, S: 5 };
+  return categoryToStat[category] ? (rankGrowth[rank] ?? 1) : 0;
+};
+
+/** Procedural flavor text (#25) — deterministic per quest, no storage needed. */
+const FLAVOR_OPENERS: Record<string, string[]> = {
+  Combat: ['A shadow stirs', 'Steel your nerves', 'The arena calls'],
+  Intel: ['A riddle beckons', 'Knowledge is a blade', 'The archive hums'],
+  Craft: ['Shape the raw chaos', 'Your forge awaits', 'Precision is power'],
+  Survival: ['Endure the trial', 'The wilds test you', 'Breath by breath'],
+  Social: ['Allies are strength', 'A word opens doors', 'The guild watches'],
+  Wildcard: ['Fate deals a hand', 'Expect nothing', 'Chance favors you'],
+};
+
+const FLAVOR_CLOSERS = [
+  'Complete it to claim the rewards.',
+  'The System will judge your effort.',
+  'Rise to the challenge, Hunter.',
+  'Victory awaits beyond the gate.',
+];
+
+const hashString = (s: string): number => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+const generateFlavorText = (category: string, rank: string, title: string): string => {
+  const openers = FLAVOR_OPENERS[category] ?? FLAVOR_OPENERS.Wildcard;
+  const opener = openers[hashString(title) % openers.length];
+  const closer = FLAVOR_CLOSERS[hashString(title + rank) % FLAVOR_CLOSERS.length];
+  return `${opener} — a Rank ${rank} challenge. ${closer}`;
+};
+
+/**
+ * Adaptive difficulty (#2, #78): suggest a quest rank band from self-reported energy (1-5).
+ * Low energy => easier quests so users keep momentum; high energy => stretch goals.
+ */
+const suggestRankForEnergy = (energy: number): { minRank: string; maxRank: string; label: string } => {
+  if (energy <= 2) return { minRank: 'E', maxRank: 'D', label: 'Take it easy — low-rank quests only.' };
+  if (energy === 3) return { minRank: 'D', maxRank: 'C', label: 'Steady pace — D and C-rank quests.' };
+  if (energy === 4) return { minRank: 'C', maxRank: 'A', label: 'Good energy — C to A-rank quests.' };
+  return { minRank: 'B', maxRank: 'S', label: 'Peak condition — hunt big game today!' };
 };
 
 // ========================
@@ -1041,6 +1680,10 @@ app.post('/api/auth/login', createRateLimitMiddleware('auth'), async (req, res) 
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    if (user.deletedAt) {
+      return res.status(401).json({ error: 'This account has been deleted' });
+    }
+
     const validPassword = await bcrypt.compare(password, user.passwordHash);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -1113,6 +1756,7 @@ app.get('/api/hunter/me', authenticateToken, async (req, res) => {
         email: true,
         avatarUrl: true,
         createdAt: true,
+        deletedAt: true,
         hunterStats: {
           select: {
             level: true,
@@ -1124,11 +1768,17 @@ app.get('/api/hunter/me', authenticateToken, async (req, res) => {
             gold: true,
             streak: true,
             longestStreak: true,
+            streakWards: true,
             statStrength: true,
             statAgility: true,
             statIntelligence: true,
             statEndurance: true,
             statLuck: true,
+            hunterClass: true,
+            comboCount: true,
+            lastEnergyLevel: true,
+            lastMoodLevel: true,
+            lastCheckInAt: true,
             progressPercent: true,
             userId: true,
             lastActiveDate: true,
@@ -1139,6 +1789,10 @@ app.get('/api/hunter/me', authenticateToken, async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    if ((user as any).deletedAt) {
+      return res.status(401).json({ error: 'Account deleted' });
     }
 
     const userData = {
@@ -1519,6 +2173,36 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           finalXpReward = calculateScaledReward(finalXpReward, stats.level, existingQuest.rank);
           finalGoldReward = calculateScaledReward(finalGoldReward, stats.level, existingQuest.rank);
 
+          // Daily combo/momentum multiplier (#4)
+          const nowDate = new Date();
+          const comboMult = calculateComboMultiplier(stats.comboCount, stats.comboDate, nowDate);
+          finalXpReward = Math.round(finalXpReward * comboMult);
+          finalGoldReward = Math.round(finalGoldReward * comboMult);
+
+          // Speedrun bonus (#34)
+          const speedrunBonusRate = calculateSpeedrunBonus(
+            { createdAt: existingQuest.createdAt, deadline: existingQuest.deadline },
+            nowDate
+          );
+          if (speedrunBonusRate > 0) {
+            finalXpReward = Math.round(finalXpReward * (1 + speedrunBonusRate));
+            finalGoldReward = Math.round(finalGoldReward * (1 + speedrunBonusRate));
+          }
+
+          // Randomized loot drop (#13)
+          const loot = rollLootDrop(existingQuest.rank);
+
+          // Category-trained stat growth (#3)
+          const statField = categoryToStat[existingQuest.category];
+          const statGain = calculateStatGrowth(existingQuest.category, existingQuest.rank);
+
+          // Combo bookkeeping: continue streak-of-day or start a new one
+          const todayStart = new Date(nowDate);
+          todayStart.setHours(0, 0, 0, 0);
+          const comboDay = stats.comboDate ? new Date(stats.comboDate) : null;
+          const isSameDay = comboDay && !Number.isNaN(comboDay.getTime()) && comboDay.setHours(0, 0, 0, 0) === todayStart.getTime();
+          const newComboCount = isSameDay ? stats.comboCount + 1 : 1;
+
           const newExp = stats.exp + finalXpReward;
           const newGold = stats.gold + finalGoldReward;
           const { level, xpToNext, progressPercent } = calculateLevelAndProgress(newExp);
@@ -1535,9 +2219,20 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
               level,
               rank: newRank,
               hp: Math.min(stats.hp + 2, stats.hpMax),
-              lastActiveDate: new Date(),
+              comboCount: newComboCount,
+              comboDate: nowDate,
+              ...(statField && statGain > 0 ? { [statField]: { increment: statGain } } : {}),
+              lastActiveDate: nowDate,
             },
           });
+
+          // Persist loot drop on the quest record for the client to render
+          if (loot.dropped && loot.item) {
+            await tx.quest.update({
+              where: { id: existingQuest.id },
+              data: { lootDropped: JSON.stringify(loot.item) },
+            });
+          }
 
           // Invalidate user cache
           await invalidateUserCache(userId);
@@ -1546,8 +2241,12 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
 
           // Enhanced notification with bonus breakdown
           let bonusMessage = '';
+          if (comboMult > 1) bonusMessage += ` Combo x${comboMult.toFixed(1)}`;
+          if (speedrunBonusRate > 0) bonusMessage += ` Speedrun +${Math.round(speedrunBonusRate * 100)}%`;
           if (varietyBonus > 0) bonusMessage += ` Variety +${varietyBonus} XP`;
           if (dualPurposeBonus.xpBonus > 0) bonusMessage += ` Dual-purpose +${dualPurposeBonus.xpBonus} XP`;
+          if (loot.dropped && loot.item) bonusMessage += ` Loot: ${loot.item.emoji} ${loot.item.name} (${loot.item.rarity})`;
+          if (statField && statGain > 0) bonusMessage += ` ${statField.replace('stat', '')} +${statGain}`;
           
           const notif = await tx.notification.create({
             data: {
@@ -1557,6 +2256,11 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
             },
           });
           emitToUser(userId, 'notification:new', notif);
+
+          // Push the loot drop as its own real-time event for the battle-payoff UI
+          if (loot.dropped && loot.item) {
+            emitToUser(userId, 'loot:dropped', loot.item);
+          }
 
           if (level > oldLevel) {
             const levelNotif = await tx.notification.create({
@@ -4053,6 +4757,7 @@ const startServer = async () => {
           prisma.guild.create({
             data: {
               name: name.trim(),
+              slug: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `guild-${Date.now()}`,
               description: description?.trim(),
               memberCount: 1,
             },

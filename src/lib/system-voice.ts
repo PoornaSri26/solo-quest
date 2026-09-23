@@ -1,4 +1,4 @@
-﻿import { Rank } from './types';
+﻿import { Rank } from '../shared/types';
 
 export type SystemPersonality = 'cryptic' | 'analytical' | 'familiar' | 'worried';
 
@@ -14,6 +14,7 @@ export const getSystemPersonality = (rank: Rank): SystemPersonality => {
     case 'B': return 'analytical';
     case 'A': return 'familiar';
     case 'S': return 'worried';
+    default: return 'cryptic';
   }
 };
 

@@ -5,9 +5,22 @@
 Solo Quest is a gamified productivity application that turns your daily tasks into quests, your goals into raids, and your personal growth into character progression. Inspired by the hit webtoon "Solo Leveling," this app brings the thrill of RPG progression to your real-life achievements.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/PoornaSri26/solo-quest)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB)](https://reactjs.org/)
+
+## 📖 Documentation
+
+| Doc | Purpose |
+|---|---|
+| [Contributing](./CONTRIBUTING.md) | How to set up, code style, PR process |
+| [Code of Conduct](./CODE_OF_CONDUCT.md) | Community standards |
+| [Security Policy](./SECURITY.md) | Responsible disclosure process |
+| [Changelog](./CHANGELOG.md) | Release history |
+| [Privacy Policy](./PRIVACY.md) | Data collection & your rights (GDPR/CCPA) |
+| [Terms of Service](./TERMS_OF_SERVICE.md) | Usage terms, IP notes |
+| [Deployment](./DEPLOYMENT.md) | Production, Kubernetes, Docker |
+| [Mobile](./MOBILE.md) | iOS/Android via Capacitor |
+| [Design](./DESIGN.md) | UI/UX design system |
 
 ## ✨ Features
 
@@ -26,9 +39,14 @@ Solo Quest is a gamified productivity application that turns your daily tasks in
 
 ### 📱 Mobile Support
 - **Capacitor Wrapper**: Native iOS and Android apps
+- **PWA**: Installable on desktop & Android with offline service worker
 - **Responsive Design**: Works seamlessly on all devices
-- **Offline Support**: Built-in service worker for offline functionality
 - **Push Notifications**: Quest reminders and achievement alerts
+
+### 🔐 Data Ownership
+- **Data Export**: Download a full JSON copy of your data anytime (Hunter Profile → Account & Data)
+- **Account Deletion**: One-click account deletion with PII anonymization
+- **Privacy-first**: See the [Privacy Policy](./PRIVACY.md) for the full story
 
 ### ⚡ Real-Time Features
 - **Live Updates**: Real-time stat updates via WebSocket
@@ -211,6 +229,8 @@ Logs are rotated daily and retained for 30 days.
 
 ## 🔒 Security
 
+Found a vulnerability? **Please don't open a public issue** — see [SECURITY.md](./SECURITY.md) for our disclosure process.
+
 ### Implemented Security Measures
 
 - **Server-side validation**: All game economy calculations done server-side
@@ -303,7 +323,7 @@ Customize colors and styles in `src/index.css` and `tailwind.config.cjs`.
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our contributing guidelines and submit pull requests to the main branch.
+Contributions are welcome! Please read our [Contributing Guide](./CONTRIBUTING.md) for setup instructions, code style, and the PR process — and note our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## 📄 License
 
@@ -335,7 +355,7 @@ For licensing inquiries, custom development, or enterprise features, please cont
 For support, feature requests, or bug reports:
 - Open an issue on GitHub
 - Email: poornasri.n24@gmail.com
-- Discord: [Coming Soon]
+- Security vulnerabilities: see [SECURITY.md](./SECURITY.md) (do not open public issues)
 
 ## 🗺️ Roadmap
 
@@ -359,11 +379,18 @@ For support, feature requests, or bug reports:
 - [ ] Social features
 - [ ] Advanced analytics
 
-### Phase 4: Expansion
+### 🗺️ Phase 4: Expansion
 - [ ] Multiplayer raids
 - [ ] Guild system
 - [ ] Marketplace
 - [ ] API for third-party integrations
+
+### 📋 Data & Compliance
+- [x] Data export endpoint (`GET /api/account/export`)
+- [x] Account deletion with PII anonymization (`DELETE /api/account`)
+- [x] Privacy Policy & Terms of Service
+- [ ] OAuth sign-in (Google/Apple/GitHub)
+- [ ] Email verification & password reset flows
 
 ## 🙏 Acknowledgments
 

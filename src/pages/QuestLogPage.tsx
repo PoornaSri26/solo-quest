@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import QuestCard from '../components/QuestCard';
 import { Plus } from 'lucide-react';
+import type { QuestCategory } from '../shared/types';
 
 const QuestLogPage: React.FC = () => {
   const {
@@ -29,7 +30,7 @@ const QuestLogPage: React.FC = () => {
       await createQuest({
         title: newQuestTitle.trim(),
         rank: newQuestRank,
-        category: newQuestCategory.trim() || 'Wildcard',
+        category: (newQuestCategory.trim() || 'Wildcard') as QuestCategory,
         status: 'ACTIVE',
         isBossQuest: false,
       });

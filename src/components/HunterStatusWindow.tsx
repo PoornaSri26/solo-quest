@@ -1,4 +1,3 @@
-import React from 'react';
 import { useStore } from '../store/useStore';
 import { Heart, Zap, Target, TrendingUp } from 'lucide-react';
 

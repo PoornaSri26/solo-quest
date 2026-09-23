@@ -1,12 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { getAvatarUrl } from '../lib/avatars';
-import { InventoryItem } from '../shared/types';
+import { createAuthApi } from '../lib/api';
 
 const HunterProfilePage: React.FC = () => {
   const {
     hunter,
     stats,
+    token,
     fetchHunter,
     fetchStats,
     fetchUserInventory,
@@ -15,7 +16,48 @@ const HunterProfilePage: React.FC = () => {
     userInventory,
     weeklyActivity,
     questSummary,
+    addToast,
+    logout,
   } = useStore();
+
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleExportData = async () => {
+    if (!token) return;
+    try {
+      const api = createAuthApi(() => token);
+      const data = await api.get('/account/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `solo-quest-export-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('success', 'Data export downloaded.');
+    } catch (error) {
+      console.error('Data export error:', error);
+      addToast('error', 'Failed to export data. Please try again.');
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!token) return;
+    setIsDeletingAccount(true);
+    try {
+      const api = createAuthApi(() => token);
+      await api.delete('/account');
+      addToast('success', 'Account deleted. Your personal data has been anonymized.');
+      logout();
+    } catch (error) {
+      console.error('Account deletion error:', error);
+      addToast('error', 'Failed to delete account. Please try again.');
+    } finally {
+      setIsDeletingAccount(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   useEffect(() => {
     fetchHunter();
@@ -275,6 +317,60 @@ const HunterProfilePage: React.FC = () => {
           <div className="text-center">
             <p className="text-text-secondary text-sm">Failed</p>
             <p className="text-2xl font-display text-crimson">{questSummary.failed}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Account & Data (data ownership / GDPR) */}
+      <div className="mt-6">
+        <h2 className="text-lg font-display mb-4 flex items-center space-x-2 text-text-primary">
+          <span className="text-gold-primary">🔐</span>
+          <span>Account &amp; Data</span>
+        </h2>
+        <div className="bg-surface border border-border-subtle rounded-md p-6 space-y-4">
+          <div>
+            <h3 className="font-medium text-text-primary mb-1">Export your data</h3>
+            <p className="text-sm text-text-secondary mb-3">
+              Download a full JSON copy of everything stored about your account — quests, stats, inventory, settings, and payment history.
+            </p>
+            <button
+              onClick={handleExportData}
+              className="px-4 py-2 text-sm rounded-sm border border-border-subtle bg-raised hover:bg-surface text-text-primary transition-fast"
+            >
+              Download my data
+            </button>
+          </div>
+
+          <div className="pt-4 border-t border-border-subtle">
+            <h3 className="font-medium text-crimson mb-1">Delete account</h3>
+            <p className="text-sm text-text-secondary mb-3">
+              Permanently delete your account. Your personal data will be anonymized and you will be logged out. This cannot be undone.
+            </p>
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-4 py-2 text-sm rounded-sm border border-crimson/50 text-crimson hover:bg-crimson/10 transition-fast"
+              >
+                Delete my account
+              </button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={isDeletingAccount}
+                  className="px-4 py-2 text-sm rounded-sm bg-crimson text-white hover:bg-crimson/80 disabled:opacity-50 transition-fast"
+                >
+                  {isDeletingAccount ? 'Deleting...' : 'Yes, permanently delete everything'}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeletingAccount}
+                  className="px-4 py-2 text-sm rounded-sm border border-border-subtle bg-raised text-text-primary hover:bg-surface disabled:opacity-50 transition-fast"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

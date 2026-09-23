@@ -1,5 +1,4 @@
 import { Clock, Zap } from 'lucide-react';
-import type { DungeonTask } from '../shared/types';
 import { useStore } from '../store/useStore';
 
 const DailyDungeonComponent: React.FC = () => {

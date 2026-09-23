@@ -185,7 +185,6 @@ export default function ProgressionPage() {
               {chapters.map((chapter, index) => {
                 const isCompleted = progression.currentLevel >= chapter.level;
                 const isCurrent = progression.currentLevel < chapter.level && (index === 0 || progression.currentLevel >= chapters[index - 1].level);
-                const isLocked = !isCompleted && !isCurrent;
 
                 return (
                   <div

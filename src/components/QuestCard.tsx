@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import Tilt from 'react-parallax-tilt';
-import { Trash2, Edit, CheckCircle, Clock, MessageSquare, Target, RefreshCw } from 'lucide-react';
+import { Trash2, Edit, CheckCircle, Clock, MessageSquare, Target, RefreshCw, Loader2, AlertCircle, AlarmClockPlus, BookOpen } from 'lucide-react';
 import { Quest, Gate, DecisionType } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { format, isToday, isTomorrow, isYesterday, parseISO } from 'date-fns';
 import QuestDecision from './QuestDecision';
+import { createAuthApi } from '../lib/api';
 
 const isPastDate = (date: Date) => {
   const now = new Date();
@@ -24,10 +25,17 @@ const QuestCard: React.FC<{
     completeQuest,
     failQuest,
     openEditQuestModal,
+    snoozeQuest,
+    saveReflection,
+    addToast,
     token,
   } = useStore();
 
   const [showDecisionModal, setShowDecisionModal] = useState(false);
+  const [showReflectModal, setShowReflectModal] = useState(false);
+  const [reflectionText, setReflectionText] = useState('');
+  const [isLoading, setIsLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleDelete = async () => {
     if (onDelete) {
@@ -37,37 +45,92 @@ const QuestCard: React.FC<{
 
   const handleDecision = async (decisionType: DecisionType, choice: string) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/quests/${quest.id}/decision`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ decisionType, choice }),
-      });
+      setIsLoading('decision');
+      setError(null);
+      
+      const api = createAuthApi(() => token);
+      await api.post(`/quests/${quest.id}/decision`, { decisionType, choice });
 
-      if (res.ok) {
-        setShowDecisionModal(false);
-        alert('Decision recorded successfully!');
-      }
+      setShowDecisionModal(false);
     } catch (error) {
       console.error('Failed to record decision:', error);
+      setError('Failed to record decision. Please try again.');
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleSnooze = async () => {
+    try {
+      setIsLoading('snooze');
+      setError(null);
+      await snoozeQuest(quest.id, 24);
+      addToast('info', `Quest snoozed until tomorrow.`);
+    } catch {
+      setError('Failed to snooze quest. Please try again.');
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleSaveReflection = async () => {
+    if (!reflectionText.trim()) return;
+    try {
+      setIsLoading('reflect');
+      setError(null);
+      await saveReflection(quest.id, reflectionText.trim());
+      setShowReflectModal(false);
+      setReflectionText('');
+      addToast('success', 'Reflection saved. Every failure teaches something.');
+    } catch {
+      setError('Failed to save reflection. Please try again.');
+    } finally {
+      setIsLoading(null);
     }
   };
 
   const handleRecover = async () => {
     try {
-      const res = await fetch(`http://localhost:5000/api/quests/${quest.id}/recover`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      setIsLoading('recover');
+      setError(null);
+      
+      const api = createAuthApi(() => token);
+      await api.post(`/quests/${quest.id}/recover`);
 
-      if (res.ok) {
-        alert('Quest recovered! Rewards reduced by 30% as a penalty.');
-        window.location.reload();
-      }
+      // Refresh data after recovery
+      window.location.reload();
     } catch (error) {
       console.error('Failed to recover quest:', error);
+      setError('Failed to recover quest. Please try again.');
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleTieredComplete = async () => {
+    const quality = prompt('Enter completion quality (PERFECT, GOOD, or POOR):');
+    if (quality && ['PERFECT', 'GOOD', 'POOR'].includes(quality.toUpperCase())) {
+      try {
+        setIsLoading('tiered');
+        setError(null);
+        
+        const api = createAuthApi(() => token);
+        const data = await api.post(`/quests/${quest.id}/complete-tiered`, { 
+          completionQuality: quality.toUpperCase() 
+        });
+
+        if (data.success) {
+          alert(`Quest completed with ${data.quality} quality! Earned ${data.rewards.xp} XP and ${data.rewards.gold} Gold`);
+          window.location.reload();
+        }
+      } catch (error) {
+        console.error('Failed to complete quest with tiered rewards:', error);
+        setError('Failed to complete quest. Please try again.');
+      } finally {
+        setIsLoading(null);
+      }
+    } else if (quality) {
+      setError('Please enter PERFECT, GOOD, or POOR');
     }
   };
 
@@ -202,16 +265,39 @@ const QuestCard: React.FC<{
               <span className="font-data text-gold-primary">+{quest.goldReward}g</span>
             </div>
 
+            {/* Error Display */}
+            {error && (
+              <div 
+                className="mb-2 p-2 bg-crimson/10 border border-crimson/30 rounded-sm"
+                role="alert"
+                aria-live="assertive"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-3 h-3 text-crimson" aria-hidden="true" />
+                  <span className="text-crimson text-xs">{error}</span>
+                  <button
+                    onClick={() => setError(null)}
+                    className="ml-auto text-crimson/70 hover:text-crimson"
+                    aria-label="Dismiss error"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Decision Button - Phase 2 Dilemma Triangle */}
               {['ACTIVE', 'IN_PROGRESS'].includes(quest.status) && (
                 <button
                   onClick={() => setShowDecisionModal(true)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-gate/20 text-violet-gate hover:bg-violet-gate/30 rounded-sm transition-fast"
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-gate/20 text-violet-gate hover:bg-violet-gate/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Make a strategic decision"
+                  aria-label={`Make decision for quest: ${quest.title}`}
                 >
-                  <Target className="w-3 h-3" />
+                  <Target className="w-3 h-3" aria-hidden="true" />
                   Decide
                 </button>
               )}
@@ -220,41 +306,62 @@ const QuestCard: React.FC<{
               {!['COMPLETED', 'FAILED', 'ARCHIVED'].includes(quest.status) && (
                 <button
                   onClick={() => completeQuest(quest.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-green-clear/20 text-green-clear hover:bg-green-clear/30 rounded-sm transition-fast"
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-green-clear/20 text-green-clear hover:bg-green-clear/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={`Complete quest: ${quest.title}`}
                 >
-                  <CheckCircle className="w-3 h-3" />
-                  Complete
+                  {isLoading === 'complete' ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      Completing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-3 h-3" aria-hidden="true" />
+                      Complete
+                    </>
+                  )}
                 </button>
               )}
 
               {/* Tiered Complete Button - Phase 2 */}
               {!['COMPLETED', 'FAILED', 'ARCHIVED'].includes(quest.status) && (
                 <button
-                  onClick={() => {
-                    const quality = prompt('Enter completion quality (PERFECT, GOOD, or POOR):');
-                    if (quality && ['PERFECT', 'GOOD', 'POOR'].includes(quality.toUpperCase())) {
-                      fetch(`http://localhost:5000/api/quests/${quest.id}/complete-tiered`, {
-                        method: 'POST',
-                        headers: {
-                          Authorization: `Bearer ${token}`,
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ completionQuality: quality.toUpperCase() }),
-                      }).then(res => res.json()).then(data => {
-                        if (data.success) {
-                          alert(`Quest completed with ${data.quality} quality! Earned ${data.rewards.xp} XP and ${data.rewards.gold} Gold`);
-                          window.location.reload();
-                        }
-                      });
-                    } else if (quality) {
-                      alert('Please enter PERFECT, GOOD, or POOR');
-                    }
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-400/20 text-purple-400 hover:bg-purple-400/30 rounded-sm transition-fast"
+                  onClick={handleTieredComplete}
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-400/20 text-purple-400 hover:bg-purple-400/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Complete with quality rating for adjusted rewards"
+                  aria-label={`Complete quest with tiered rewards: ${quest.title}`}
                 >
-                  <Target className="w-3 h-3" />
-                  Tiered
+                  {isLoading === 'tiered' ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Target className="w-3 h-3" aria-hidden="true" />
+                      Tiered
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Snooze Button — alternative to binary complete/fail (#73) */}
+              {['ACTIVE', 'IN_PROGRESS'].includes(quest.status) && (quest.snoozeCount ?? 0) < 3 && (
+                <button
+                  onClick={handleSnooze}
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-sky-400/20 text-sky-300 hover:bg-sky-400/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Postpone this quest by 24 hours (max 3 times)"
+                  aria-label={`Snooze quest: ${quest.title}`}
+                >
+                  {isLoading === 'snooze' ? (
+                    <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <AlarmClockPlus className="w-3 h-3" aria-hidden="true" />
+                  )}
+                  Snooze
                 </button>
               )}
 
@@ -262,10 +369,26 @@ const QuestCard: React.FC<{
               {['ACTIVE', 'IN_PROGRESS'].includes(quest.status) && (
                 <button
                   onClick={() => failQuest(quest.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs border border-crimson text-crimson hover:bg-crimson/10 rounded-sm transition-fast"
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs border border-crimson text-crimson hover:bg-crimson/10 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={`Mark quest as failed: ${quest.title}`}
                 >
-                  <MessageSquare className="w-3 h-3" />
+                  <MessageSquare className="w-3 h-3" aria-hidden="true" />
                   Fail
+                </button>
+              )}
+
+              {/* Reflect Button — failure reflection prompt (#66) */}
+              {quest.status === 'FAILED' && (
+                <button
+                  onClick={() => setShowReflectModal(true)}
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-gate/20 text-violet-gate hover:bg-violet-gate/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Reflect on why this quest failed"
+                  aria-label={`Reflect on failed quest: ${quest.title}`}
+                >
+                  <BookOpen className="w-3 h-3" aria-hidden="true" />
+                  Reflect
                 </button>
               )}
 
@@ -273,11 +396,22 @@ const QuestCard: React.FC<{
               {quest.status === 'FAILED' && (
                 <button
                   onClick={handleRecover}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-yellow-400/20 text-yellow-400 hover:bg-yellow-400/30 rounded-sm transition-fast"
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-yellow-400/20 text-yellow-400 hover:bg-yellow-400/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Recover quest with 30% reward penalty"
+                  aria-label={`Recover quest: ${quest.title}`}
                 >
-                  <RefreshCw className="w-3 h-3" />
-                  Recover
+                  {isLoading === 'recover' ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      Recovering...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3 h-3" aria-hidden="true" />
+                      Recover
+                    </>
+                  )}
                 </button>
               )}
 
@@ -285,9 +419,11 @@ const QuestCard: React.FC<{
               {['ACTIVE', 'IN_PROGRESS', 'SHADOW'].includes(quest.status) && (
                 <button
                   onClick={() => openEditQuestModal(quest.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs border border-border-subtle text-text-secondary hover:bg-raised hover:text-text-primary rounded-sm transition-fast"
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs border border-border-subtle text-text-secondary hover:bg-raised hover:text-text-primary rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={`Edit quest: ${quest.title}`}
                 >
-                  <Edit className="w-3 h-3" />
+                  <Edit className="w-3 h-3" aria-hidden="true" />
                   Edit
                 </button>
               )}
@@ -296,9 +432,11 @@ const QuestCard: React.FC<{
               {onDelete && (
                 <button
                   onClick={handleDelete}
-                  className="flex items-center gap-1 px-2 py-1 text-xs border border-crimson text-crimson hover:bg-crimson/10 rounded-sm transition-fast"
+                  disabled={isLoading !== null}
+                  className="flex items-center gap-1 px-2 py-1 text-xs border border-crimson text-crimson hover:bg-crimson/10 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={`Delete quest: ${quest.title}`}
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-3 h-3" aria-hidden="true" />
                   Delete
                 </button>
               )}
@@ -322,6 +460,52 @@ const QuestCard: React.FC<{
           onDecision={handleDecision}
           onCancel={() => setShowDecisionModal(false)}
         />
+      )}
+
+      {/* Failure Reflection Modal (#66) */}
+      {showReflectModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Quest failure reflection"
+          onClick={() => setShowReflectModal(false)}
+        >
+          <div
+            className="bg-surface border border-border-subtle rounded-md p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-text-primary text-lg mb-2">Why did this quest fail?</h3>
+            <p className="text-text-secondary text-sm mb-4">
+              No judgment — understanding the obstacle is how hunters grow.
+            </p>
+            <textarea
+              value={reflectionText}
+              onChange={(e) => setReflectionText(e.target.value)}
+              maxLength={1000}
+              rows={4}
+              placeholder="e.g., I underestimated how long this would take after work…"
+              className="w-full bg-raised border border-border-subtle rounded-sm p-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-violet-gate"
+              autoFocus
+            />
+            <p className="text-xs text-text-muted text-right mb-4">{reflectionText.length}/1000</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowReflectModal(false)}
+                className="px-4 py-2 text-sm border border-border-subtle text-text-secondary hover:text-text-primary rounded-sm transition-fast"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveReflection}
+                disabled={!reflectionText.trim() || isLoading === 'reflect'}
+                className="px-4 py-2 text-sm bg-violet-gate/30 text-violet-gate hover:bg-violet-gate/40 rounded-sm transition-fast disabled:opacity-40"
+              >
+                {isLoading === 'reflect' ? 'Saving…' : 'Save Reflection'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

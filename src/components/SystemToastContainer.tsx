@@ -90,20 +90,6 @@ const SystemToastContainer: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const getTypeStyles = (type: Toast['type']) => {
-    const t = type.toUpperCase();
-    switch (t) {
-      case 'REWARD':
-        return 'border-gold-primary bg-gold-primary/10 text-gold-primary';
-      case 'PENALTY':
-        return 'border-crimson bg-crimson/10 text-crimson';
-      case 'WARNING':
-        return 'border-rank-a bg-rank-a/10 text-rank-a';
-      default:
-        return 'border-violet-gate bg-violet-gate/10 text-violet-gate';
-    }
-  };
-
   return (
     <>
       {/* Rank Up Cinematic Overlay */}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, TrendingUp, Route, Lightbulb, Award, Plus, Edit, Trash2 } from 'lucide-react';
+import { Brain, TrendingUp, Route, Lightbulb, Award } from 'lucide-react';
 import { KnowledgeProgress } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';

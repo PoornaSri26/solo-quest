@@ -1,15 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import PredictiveArc from '../components/PredictiveArc';
+import RadialRevealButton from '../components/RadialRevealButton';
+
+const heroButtonFont = {
+  fontFamily: 'inherit',
+  fontSize: 17,
+  fontWeight: 600,
+  lineHeight: '1.2em',
+  letterSpacing: '0em',
+  textAlign: 'center' as const,
+};
 
 gsap.registerPlugin(ScrollTrigger);
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [currentVideo, setCurrentVideo] = useState<string | null>(null);
-  
+
   const heroRef = useRef<HTMLDivElement>(null);
   const featuresRef = useRef<HTMLDivElement>(null);
   const demoRef = useRef<HTMLDivElement>(null);
@@ -18,10 +27,8 @@ export default function LandingPage() {
     navigate('/auth');
   };
 
-  const handleWaitlistSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    alert('Thanks for joining the waitlist! We\'ll notify you when we launch.');
-    setEmail('');
+  const handleSeeHowItWorks = () => {
+    demoRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   // Subtle, purposeful animations
@@ -65,48 +72,82 @@ export default function LandingPage() {
       
       {/* Hero Section */}
       <div ref={heroRef} className="relative min-h-screen flex items-center justify-center">
-        <div className="absolute inset-0">
-          <div className="absolute top-1/3 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-1/3 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute inset-0 z-0">
+          <PredictiveArc 
+            background="#020617"
+            baseColor="#7c3aed"
+            accentColor="#a78bfa"
+            highlight="#c4b5fd"
+            width={1200}
+            height={800}
+            style={{ width: '100%', height: '100%' }}
+          />
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white mb-6 tracking-tight leading-tight">
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white mb-6 tracking-tight leading-tight drop-shadow-lg">
             Turn your daily tasks into quests
           </h1>
             
-          <p className="text-xl md:text-2xl text-gray-400 mb-8 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-xl md:text-2xl text-gray-200 mb-8 max-w-3xl mx-auto leading-relaxed drop-shadow-md">
             The productivity app that gamifies your work. Complete quests, level up, and achieve your goals with the motivation of game progression.
           </p>
 
-          <div className="flex flex-wrap justify-center gap-8 mb-12 text-gray-400">
+          <div className="flex flex-wrap justify-center gap-8 mb-12 text-gray-200">
             <div>
-              <div className="text-2xl font-bold text-white">10K+</div>
+              <div className="text-2xl font-bold text-white drop-shadow-md">10K+</div>
               <div className="text-sm">Active Hunters</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">50K+</div>
+              <div className="text-2xl font-bold text-white drop-shadow-md">50K+</div>
               <div className="text-sm">Quests Completed</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">4.9★</div>
+              <div className="text-2xl font-bold text-white drop-shadow-md">4.9★</div>
               <div className="text-sm">User Rating</div>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <button
+            <RadialRevealButton
+              label="Start Free Trial"
               onClick={handleGetStarted}
-              className="px-8 py-4 bg-white text-slate-900 font-semibold text-lg rounded-lg hover:bg-gray-100 transition-all duration-200"
-            >
-              Start Free Trial
-            </button>
-            <button
-              onClick={() => setCurrentVideo('demo')}
-              className="px-8 py-4 bg-transparent border border-slate-700 text-white font-semibold text-lg rounded-lg hover:bg-slate-800 transition-all duration-200"
-            >
-              See How It Works
-            </button>
+              font={heroButtonFont}
+              padding="16px 32px"
+              rounded={100}
+              colors={{
+                fill: '#7c3aed',
+                textColor: '#ffffff',
+                hoverFill: '#ffffff',
+                hoverTextColor: '#5b21b6',
+              }}
+              border={{ borderWidth: 0 }}
+              style={{
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -4px rgba(0,0,0,0.3)',
+              }}
+            />
+            <RadialRevealButton
+              label="See How It Works"
+              onClick={handleSeeHowItWorks}
+              font={heroButtonFont}
+              padding="16px 32px"
+              rounded={100}
+              colors={{
+                fill: 'rgba(255,255,255,0.08)',
+                textColor: '#ffffff',
+                hoverFill: '#ffffff',
+                hoverTextColor: '#0f172a',
+              }}
+              border={{
+                borderWidth: 2,
+                borderStyle: 'solid',
+                borderColor: 'rgba(255,255,255,0.2)',
+              }}
+              style={{
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
+            />
           </div>
         </div>
       </div>
@@ -259,12 +300,20 @@ export default function LandingPage() {
           <p className="text-xl text-gray-400 mb-8">
             Join thousands of hunters who are already transforming their productivity.
           </p>
-          <button
+          <RadialRevealButton
+            label="Start Your Free Trial"
             onClick={handleGetStarted}
-            className="px-8 py-4 bg-white text-slate-900 font-semibold text-lg rounded-lg hover:bg-gray-100 transition-all duration-200"
-          >
-            Start Your Free Trial
-          </button>
+            font={heroButtonFont}
+            padding="16px 32px"
+            rounded={100}
+            colors={{
+              fill: '#ffffff',
+              textColor: '#0f172a',
+              hoverFill: '#7c3aed',
+              hoverTextColor: '#ffffff',
+            }}
+            border={{ borderWidth: 0 }}
+          />
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import QuestCard from './QuestCard';
 import GatesList from './GatesList';
 import QuickCapture from './QuickCapture';
 import { DailyDungeon } from './DailyDungeon';
+import MoodCheckIn from './MoodCheckIn';
 import { GateInscription } from '../sections/GateInscription';
 import { StatDashboard } from '../sections/StatDashboard';
 import { QuestLog } from '../sections/QuestLog';
@@ -159,6 +160,11 @@ const Dashboard: React.FC = () => {
           <div className="mt-8">
             <DailyDungeon />
           </div>
+
+          {/* Daily Check-In (adaptive difficulty) */}
+          <div className="mt-8">
+            <MoodCheckIn />
+          </div>
         </div>
       )}
 
@@ -252,6 +258,11 @@ const Dashboard: React.FC = () => {
           </h2>
           <StatDashboard />
         </section>
+        </Tilt>
+
+        {/* Daily Check-In (adaptive difficulty) */}
+        <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600}>
+          <MoodCheckIn />
         </Tilt>
       </div>
 

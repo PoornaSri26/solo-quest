@@ -1,5 +1,26 @@
 export type Rank = 'E' | 'D' | 'C' | 'B' | 'A' | 'S';
-export type HunterClass = 'NONE' | 'WARRIOR' | 'MAGE' | 'ASSASSIN';
+export type HunterClass = 'NONE' | 'WARRIOR' | 'MAGE' | 'SCHOLAR' | 'ASSASSIN' | 'RANGER';
+
+export interface RankSuggestion {
+  minRank: Rank;
+  maxRank: Rank;
+  label: string;
+}
+
+export interface LootItem {
+  id: string;
+  name: string;
+  rarity: 'common' | 'rare' | 'epic';
+  emoji: string;
+}
+
+export interface QuestSuggestion {
+  energy: number;
+  suggestion: RankSuggestion;
+  reason: string;
+  quests: Quest[];
+  questOfTheDay: Quest | null;
+}
 export type QuestCategory = 'Combat' | 'Intel' | 'Craft' | 'Survival' | 'Social' | 'Wildcard';
 export type QuestStatus = 'SHADOW' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'ARCHIVED';
 export type GateStatus = 'active' | 'cleared' | 'collapsed' | 'ACTIVE' | 'CLEARED' | 'COLLAPSED';
@@ -38,6 +59,10 @@ export interface HunterStats {
   statIntelligence: number;
   statEndurance: number;
   statLuck: number;
+  comboCount?: number;
+  lastEnergyLevel?: number | null;
+  lastMoodLevel?: number | null;
+  lastCheckInAt?: string | null;
   lastActiveDate: string;
   hunterClass: HunterClass;
   loreUnlocked: string[];
@@ -53,6 +78,10 @@ export interface Quest {
   notes?: string | null;
   gateId?: string | null;
   isBossQuest: boolean;
+  snoozedUntil?: string | null;
+  snoozeCount?: number;
+  reflection?: string | null;
+  lootDropped?: string | null;
   expReward: number;
   goldReward: number;
   completedAt?: string | null;
