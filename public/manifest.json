@@ -1,0 +1,25 @@
+{
+  "name": "Solo Quest",
+  "short_name": "Solo Quest",
+  "description": "Transform your productivity into an epic RPG adventure. Turn tasks into quests, goals into raids, and growth into character progression.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait-primary",
+  "categories": ["productivity", "lifestyle", "games"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Folder, Trash2, Edit } from 'lucide-react';
-import { Gate } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { format, isToday, isTomorrow, isPast, parseISO } from 'date-fns';
 

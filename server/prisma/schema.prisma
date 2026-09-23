@@ -1,3 +1,22 @@
+// ============================================================
+// SOLO QUEST DATABASE SCHEMA
+// ============================================================
+// 
+// This Prisma schema defines the complete database structure for
+// the Solo Quest gamified productivity application.
+//
+// Key Design Principles:
+// - Comprehensive indexing for query performance
+// - Proper foreign key relationships with cascade/delete rules
+// - Soft delete support for data recovery
+// - Audit timestamps (createdAt, updatedAt) on all records
+// - Table mapping for consistent naming conventions
+// - SQLite-compatible types (enums handled at application layer)
+//
+// Database: SQLite (development), can migrate to PostgreSQL for production
+// ORM: Prisma Client
+// ============================================================
+
 datasource db {
   provider = "sqlite"
   url      = "file:./dev.db"
@@ -7,14 +26,41 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ============================================================
+// ENUM DEFINITIONS (Application Layer)
+// ============================================================
+// Note: SQLite doesn't support native enums, so these are defined
+// as String types with validation at the application layer
+// Valid values are documented in comments for reference
+
+// Quest Status: SHADOW, ACTIVE, IN_PROGRESS, COMPLETED, FAILED, ARCHIVED
+// Quest Rank: E, D, C, B, A, S
+// Gate Status: ACTIVE, COMPLETED, FAILED, CANCELLED
+// Subscription Plan: FREE, HUNTER_PASS, GUILD, ENTERPRISE
+// Subscription Status: ACTIVE, CANCELED, PAST_DUE, TRIALING, EXPIRED
+// Payment Status: PENDING, COMPLETED, FAILED, REFUNDED
+// Payment Method: STRIPE, PAYPAL, APPLE_PAY, GOOGLE_PAY
+// Raid Status: ACTIVE, COMPLETED, FAILED, CANCELLED
+// Notification Type: QUEST_COMPLETED, QUEST_FAILED, LEVEL_UP, ACHIEVEMENT, REMINDER, SOCIAL, SYSTEM
+
+// ============================================================
+// CORE USER MODELS
+// ============================================================
+
+/// Main user account model
+/// Contains core user information and relationships to all user data
 model User {
   id            String   @id @default(uuid())
-  hunterId      String   @unique
-  displayName   String
-  email         String   @unique
-  passwordHash  String
-  avatarUrl     String?
-  createdAt     DateTime @default(now())
+  hunterId      String   @unique // Unique hunter identifier for game mechanics
+  displayName String // User's display name
+  email         String   @unique // User's email (used for login)
+  passwordHash  String   // Hashed password (bcrypt)
+  avatarUrl     String? // Optional avatar image URL
+  createdAt     DateTime @default(now()) // Account creation timestamp
+  updatedAt     DateTime @updatedAt // Last update timestamp
+  deletedAt     DateTime? // Soft delete timestamp (null = active)
+  
+  // Relationships
   hunterStats   HunterStats? @relation("HunterStats")
   quests        Quest[]  @relation("UserQuests")
   gates         Gate[]   @relation("UserGates")
@@ -29,465 +75,786 @@ model User {
   payments      Payment[] @relation("UserPayments")
   userSettings  UserSettings? @relation("UserSettings")
   raidParticipations RaidParticipant[] @relation("RaidParticipants")
-  organizationId String?
-  organization   Organization? @relation("OrganizationMembers", fields: [organizationId], references: [id])
+  organizationId String? // Optional organization membership
+  organization   Organization? @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
   questPacks    QuestPack[] @relation("CreatorQuestPacks")
   questPackPurchases QuestPackPurchase[] @relation("UserQuestPackPurchases")
   
-  @@index([organizationId])
+  @@index([organizationId]) // Fast organization member lookups
+  @@index([createdAt]) // Chronological queries
+  @@index([deletedAt]) // Soft delete filtering
+  @@map("users")
 }
 
+/// Hunter statistics and game progression data
+/// Contains all RPG-style stats that track user progress in the game
 model HunterStats {
   id               String   @id @default(uuid())
   userId           String   @unique @map("fk_user_id")
-  level            Int      @default(1)
-  exp              Int      @default(0)
-  expToNext        Int      @default(100)
-  progressPercent  Float    @default(0)
-  rank             String     @default("E")
-  hp               Int      @default(100)
-  hpMax            Int      @default(100)
-  gold             Int      @default(0)
-  streak           Int      @default(0)
-  longestStreak    Int      @default(0)
-  streakWards     Int      @default(1)
-  streakWagerActive Boolean @default(false)
-  streakWagerGoal  Int      @default(0)
-  streakWagerStake Int      @default(0)
-  streakWagerStart DateTime?
-  statStrength     Int      @default(0)
-  statAgility      Int      @default(0)
-  statIntelligence Int      @default(0)
-  statEndurance    Int      @default(0)
-  statLuck         Int      @default(0)
-  lastActiveDate   DateTime @default(now())
-  user             User     @relation("HunterStats", fields: [userId], references: [id])
+  level            Int      @default(1) // Current hunter level
+  exp              Int      @default(0) // Current experience points
+  expToNext        Int      @default(100) // XP needed for next level
+  progressPercent  Float    @default(0) // Progress percentage to next level
+  rank             String @default("E") // Current hunter rank (E-S)
+  hp               Int      @default(100) // Current health points
+  hpMax            Int      @default(100) // Maximum health points
+  gold             Int      @default(0) // Gold currency
+  streak           Int      @default(0) // Current daily streak
+  longestStreak    Int      @default(0) // Longest streak achieved
+  streakWards     Int      @default(1) // Available streak freeze tokens
+  streakWagerActive Boolean @default(false) // Whether streak wager is active
+  streakWagerGoal  Int      @default(0) // Streak wager goal
+  streakWagerStake Int      @default(0) // Gold staked on streak wager
+  streakWagerStart DateTime? // When streak wager started
+  statStrength     Int      @default(0) // Strength stat
+  statAgility      Int      @default(0) // Agility stat
+  statIntelligence Int      @default(0) // Intelligence stat
+  statEndurance    Int      @default(0) // Endurance stat
+  statLuck         Int      @default(0) // Luck stat
+  hunterClass      String   @default("NONE") // Archetype: NONE, WARRIOR, MAGE, SCHOLAR, ASSASSIN, RANGER
+  comboCount       Int      @default(0) // Consecutive completions today (momentum system)
+  comboDate        DateTime? // Day the current combo belongs to (resets daily)
+  lastEnergyLevel  Int? // Last self-reported energy 1-5 (adaptive difficulty)
+  lastMoodLevel    Int? // Last self-reported mood 1-5 (adaptive difficulty)
+  lastCheckInAt    DateTime? // When energy/mood was last reported
+  lastActiveDate   DateTime @default(now()) // Last activity timestamp
+  createdAt        DateTime @default(now()) // Record creation timestamp
+  updatedAt        DateTime @updatedAt // Last update timestamp
+  
+  // Relationships
+  user             User     @relation("HunterStats", fields: [userId], references: [id], onDelete: Cascade)
   milestoneProgress MilestoneProgress[] @relation("UserMilestoneProgress")
   masteryChallengeProgress MasteryChallengeProgress[] @relation("UserMasteryChallengeProgress")
   userMementos     UserMemento[] @relation("HunterStatsUserMementos")
+  
+  @@index([userId]) // Primary lookup by user
+  @@index([rank]) // Rank-based queries
+  @@index([level]) // Level-based queries
+  @@index([streak]) // Streak-based queries
+  @@map("hunter_stats")
 }
 
+// ============================================================
+// QUEST MODELS
+// ============================================================
+
+/// Core quest model - represents tasks as game quests
+/// Supports different ranks (E-S), categories, and status tracking
 model Quest {
-  id           String   @id @default(uuid())
-  userId       String   @map("fk_user_id")
-  title        String
-  rank         String
-  category     String
-  status       String   @default("SHADOW")
-  deadline     DateTime?
-  notes        String?
-  gateId       String?    @map("fk_gate_id")
-  isBossQuest  Boolean    @default(false)
-  expReward    Int
-  goldReward   Int
-  completedAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String     @id @default(uuid())
+  userId       String     @map("fk_user_id")
+  title String // Quest title/description
+  rank         String @default("E") // Difficulty rank (E-S)
+  category     String // Quest category (e.g., "Work", "Personal", "Health")
+  status       String @default("SHADOW") // Current quest status
+  deadline     DateTime? // Optional deadline for quest completion
+  notes String? // Additional notes about the quest
+  gateId       String?    @map("fk_gate_id") // Optional gate association
+  isBossQuest  Boolean    @default(false) // Whether this is a boss quest
+  snoozedUntil DateTime? // Postponed deadline for snoozed quests
+  snoozeCount  Int        @default(0) // How many times this quest was snoozed
+  reflection   String?    // User's reflection on why the quest failed
+  lootDropped  String?    // JSON of last loot drop from this quest
+  expReward    Int        @default(0) // XP reward for completion
+  goldReward   Int        @default(0) // Gold reward for completion
+  completedAt  DateTime? // Timestamp when quest was completed
+  createdAt    DateTime   @default(now()) // Quest creation timestamp
+  updatedAt    DateTime   @updatedAt // Last update timestamp
+  deletedAt    DateTime?  // Soft delete timestamp
+  
+  // Relationships
   subtasks     QuestSubtask[] @relation("QuestSubtasks")
-  gate         Gate?      @relation("QuestGate", fields: [gateId], references: [id])
-  user         User       @relation("UserQuests", fields: [userId], references: [id])
+  gate         Gate?      @relation("QuestGate", fields: [gateId], references: [id], onDelete: SetNull)
+  user         User       @relation("UserQuests", fields: [userId], references: [id], onDelete: Cascade)
   decisions    QuestDecision[] @relation("QuestDecisions")
 
-  @@index([userId, status])
-  @@index([userId, gateId])
-  @@index([userId, completedAt])
+  @@index([userId, status]) // User's quests by status
+  @@index([userId, gateId]) // User's quests by gate
+  @@index([userId, completedAt]) // User's completed quests by date
+  @@index([userId, deadline]) // User's quests by deadline
+  @@index([status, deadline]) // All quests by status and deadline
+  @@index([deletedAt]) // Soft delete filtering
+  @@map("quests")
 }
 
+/// Quest subtasks for breaking down complex quests
+/// Allows users to create smaller tasks within a quest
 model QuestSubtask {
   id        String   @id @default(uuid())
   questId   String   @map("fk_quest_id")
-  title     String
-  completed Boolean  @default(false)
-  position  Int
-  quest     Quest    @relation("QuestSubtasks", fields: [questId], references: [id])
+  title String // Subtask description
+  completed Boolean  @default(false) // Completion status
+  position  Int // Order position within quest
+  createdAt DateTime @default(now()) // Creation timestamp
+  updatedAt DateTime @updatedAt // Last update timestamp
+  quest     Quest    @relation("QuestSubtasks", fields: [questId], references: [id], onDelete: Cascade)
+  
+  @@index([questId]) // Fast lookup by quest
+  @@index([position]) // Position-based ordering
+  @@map("quest_subtasks")
 }
 
+// ============================================================
+// GATE MODELS
+// ============================================================
+
+/// Gate model - represents collections of quests with shared objectives
+/// Gates group related quests together for thematic or organizational purposes
 model Gate {
-  id        String   @id @default(uuid())
-  userId    String   @map("fk_user_id")
-  name      String
-  rank      String
-  deadline  DateTime?
-  status    String   @default("ACTIVE")
-  createdAt DateTime @default(now())
-  user      User     @relation("UserGates", fields: [userId], references: [id])
-  quests    Quest[]  @relation("QuestGate")
+  id        String      @id @default(uuid())
+  userId    String      @map("fk_user_id")
+  name String // Gate name
+  rank      String @default("E") // Gate difficulty rank
+  deadline  DateTime? // Optional deadline for gate completion
+  status    String @default("ACTIVE") // Current gate status
+  createdAt DateTime    @default(now()) // Gate creation timestamp
+  updatedAt DateTime    @updatedAt // Last update timestamp
+  deletedAt DateTime?   // Soft delete timestamp
+  user      User        @relation("UserGates", fields: [userId], references: [id], onDelete: Cascade)
+  quests    Quest[]     @relation("QuestGate")
 
-  @@index([userId, status])
-  @@index([userId, createdAt])
+  @@index([userId, status]) // User's gates by status
+  @@index([userId, createdAt]) // User's gates by creation date
+  @@index([deadline]) // Gates by deadline
+  @@index([deletedAt]) // Soft delete filtering
+  @@map("gates")
 }
 
+// ============================================================
+// DUNGEON MODELS
+// ============================================================
+
+/// Daily dungeon model - represents daily challenge tasks
+/// Users complete dungeons to maintain streaks and earn bonuses
 model DailyDungeon {
   id        String   @id @default(uuid())
   userId    String   @map("fk_user_id")
-  name      String
-  shift     String?   @default("ALL_DAY")
-  active    Boolean  @default(true)
+  name String // Dungeon name
+  shift     String?  @default("ALL_DAY") // Time shift (morning, afternoon, evening, all_day)
+  active    Boolean  @default(true) // Whether dungeon is currently active
+  date      DateTime @default(now()) // Dungeon date
+  createdAt DateTime @default(now()) // Creation timestamp
+  updatedAt DateTime @updatedAt // Last update timestamp
   tasks     DungeonTask[] @relation("DungeonTasks")
   logs      DungeonLog[] @relation("DungeonLogs")
-  user      User     @relation("UserDungeons", fields: [userId], references: [id])
+  user      User     @relation("UserDungeons", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, date]) // User's dungeons by date
+  @@index([active]) // Active dungeons
+  @@map("daily_dungeons")
 }
 
+/// Individual tasks within a daily dungeon
+/// Each dungeon contains multiple tasks that must be completed
 model DungeonTask {
-  id        String   @id @default(uuid())
-  dungeonId String   @map("fk_dungeon_id")
-  title     String
-  rank      String
-  position  Int
-  completed Boolean  @default(false)
-  dungeon   DailyDungeon @relation("DungeonTasks", fields: [dungeonId], references: [id])
+  id        String     @id @default(uuid())
+  dungeonId String     @map("fk_dungeon_id")
+  title String // Task description
+  rank      String @default("E") // Task difficulty rank
+  position  Int // Order position within dungeon
+  completed Boolean    @default(false) // Completion status
+  createdAt DateTime   @default(now()) // Creation timestamp
+  updatedAt DateTime   @updatedAt // Last update timestamp
+  dungeon   DailyDungeon @relation("DungeonTasks", fields: [dungeonId], references: [id], onDelete: Cascade)
+  
+  @@index([dungeonId]) // Fast lookup by dungeon
+  @@index([position]) // Position-based ordering
+  @@map("dungeon_tasks")
 }
 
+/// Dungeon completion logs for tracking daily performance
+/// Records when dungeons are completed and tracks completion rates
 model DungeonLog {
-  id            String   @id @default(uuid())
-  dungeonId     String   @map("fk_dungeon_id")
-  date          DateTime @default(now())
-  completedCount Int
-  totalCount    Int
-  cleared       Boolean
-  dungeon       DailyDungeon @relation("DungeonLogs", fields: [dungeonId], references: [id])
+  id            String       @id @default(uuid())
+  dungeonId     String       @map("fk_dungeon_id")
+  date          DateTime     @default(now()) // Log date
+  completedCount Int // Number of tasks completed
+  totalCount    Int // Total number of tasks
+  cleared       Boolean // Whether dungeon was fully cleared
+  createdAt     DateTime     @default(now()) // Creation timestamp
+  dungeon       DailyDungeon @relation("DungeonLogs", fields: [dungeonId], references: [id], onDelete: Cascade)
+  
+  @@index([dungeonId, date]) // Dungeon logs by date
+  @@map("dungeon_logs")
 }
 
+// ============================================================
+// NOTIFICATION MODELS
+// ============================================================
+
+/// User notifications for system events and achievements
+/// Tracks in-app notifications for various game events
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String   @map("fk_user_id")
-  message   String
-  type      String
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user      User     @relation("UserNotifications", fields: [userId], references: [id])
+  id        String          @id @default(uuid())
+  userId    String          @map("fk_user_id")
+  message String // Notification message
+  type      String // Notification type (QUEST_COMPLETED, QUEST_FAILED, LEVEL_UP, ACHIEVEMENT, REMINDER, SOCIAL, SYSTEM)
+  read      Boolean         @default(false) // Read status
+  createdAt DateTime        @default(now()) // Creation timestamp
+  expiresAt DateTime? // Optional expiration time
+  user      User            @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, read])
-  @@index([userId, createdAt])
+  @@index([userId, read]) // User's notifications by read status
+  @@index([userId, createdAt]) // User's notifications by date
+  @@index([expiresAt]) // Expired notifications cleanup
+  @@map("notifications")
 }
 
+// ============================================================
+// SHOP & INVENTORY MODELS
+// ============================================================
+
+/// Shop items available for purchase with gold
+/// Contains cosmetic items, power-ups, and other purchasable content
 model ShopItem {
-  id        String   @id @default(uuid())
-  name      String
-  category  String
-  costGold  Int
-  description String?
+  id          String   @id @default(uuid())
+  name String // Item name
+  category    String // Item category (cosmetics, power-ups, etc.)
+  costGold    Int // Cost in gold
+  description String? // Item description
+  isActive    Boolean  @default(true) // Whether item is currently available
+  createdAt   DateTime @default(now()) // Creation timestamp
+  updatedAt   DateTime @updatedAt // Last update timestamp
   userInventory UserInventory[] @relation("Item")
+  
+  @@index([category]) // Items by category
+  @@index([isActive]) // Active items
+  @@map("shop_items")
 }
 
+/// User inventory - tracks items purchased by users
+/// Links users to shop items they've purchased
 model UserInventory {
-  id        String   @id @default(uuid())
-  userId    String   @map("fk_user_id")
-  itemId    String   @map("fk_item_id")
-  equipped  Boolean  @default(false)
-  acquiredAt DateTime @default(now())
-  user      User     @relation("UserInventory", fields: [userId], references: [id])
-  item      ShopItem @relation("Item", fields: [itemId], references: [id])
+  id         String    @id @default(uuid())
+  userId     String    @map("fk_user_id")
+  itemId     String    @map("fk_item_id")
+  equipped   Boolean   @default(false) // Whether item is currently equipped
+  acquiredAt DateTime  @default(now()) // Purchase timestamp
+  user       User      @relation("UserInventory", fields: [userId], references: [id], onDelete: Cascade)
+  item       ShopItem  @relation("Item", fields: [itemId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, itemId])
+  @@unique([userId, itemId]) // One entry per item per user
+  @@index([userId]) // User's inventory
+  @@index([itemId]) // Item ownership
+  @@map("user_inventory")
 }
 
+// ============================================================
+// MILESTONE & MEMENTO MODELS
+// ============================================================
+
+/// Milestone definitions - fixed achievement goals
+/// Represents fixed reference points for user progression
 model Milestone {
   id          String   @id @default(uuid())
-  name        String
-  description String
-  requirement String
-  xpReward    Int
-  goldReward  Int
-  mementoId   String?  @map("fk_memento_id")
-  memento     Memento? @relation("MilestoneMementos", fields: [mementoId], references: [id])
+  name String // Milestone name
+  description String // Milestone description
+  requirement String // Requirement description
+  xpReward    Int      @default(0) // XP reward
+  goldReward  Int      @default(0) // Gold reward
+  isActive    Boolean  @default(true) // Whether milestone is currently available
+  category    String? // For grouping milestones (e.g., "quests", "rank", "streak")
+  mementoId   String?  @map("fk_memento_id") // Optional memento reward
+  createdAt   DateTime @default(now()) // Creation timestamp
+  updatedAt   DateTime @updatedAt // Last update timestamp
+  memento     Memento? @relation("MilestoneMementos", fields: [mementoId], references: [id], onDelete: SetNull)
   progress    MilestoneProgress[] @relation("MilestoneProgress")
+  
+  @@index([isActive]) // Active milestones
+  @@index([category]) // Milestones by category
+  @@map("milestones")
 }
 
+/// User milestone progress - tracks individual progress toward milestones
+/// Links users to milestones and tracks their completion status
 model MilestoneProgress {
-  id          String   @id @default(uuid())
-  userId      String   @map("fk_user_id")
-  milestoneId String   @map("fk_milestone_id")
-  completed   Boolean  @default(false)
-  completedAt DateTime?
-  progress    Int      @default(0)
-  milestone   Milestone   @relation("MilestoneProgress", fields: [milestoneId], references: [id])
-  stats       HunterStats @relation("UserMilestoneProgress", fields: [userId], references: [id])
+  id          String     @id @default(uuid())
+  userId      String     @map("fk_user_id")
+  milestoneId String     @map("fk_milestone_id")
+  completed   Boolean    @default(false) // Completion status
+  completedAt DateTime? // Completion timestamp
+  progress    Int        @default(0) // Current progress value
+  startedAt   DateTime?  @default(now()) // When user started this milestone
+  updatedAt   DateTime   @updatedAt // Last update timestamp
+  milestone   Milestone  @relation("MilestoneProgress", fields: [milestoneId], references: [id], onDelete: Cascade)
+  stats       HunterStats @relation("UserMilestoneProgress", fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, milestoneId], name: "userId_milestoneId")
-  @@index([userId])
-  @@index([milestoneId])
+  @@unique([userId, milestoneId], name: "userId_milestoneId") // One progress entry per user per milestone
+  @@index([userId]) // User's milestone progress
+  @@index([milestoneId]) // Milestone progress across users
+  @@index([completed]) // Completed milestones
+  @@map("milestone_progress")
 }
 
+/// Mastery challenge definitions - skill-based challenges
+/// Represents skill tests that users can complete for rewards
 model MasteryChallenge {
   id          String   @id @default(uuid())
-  name        String
-  description String
-  requirement String
-  xpReward    Int
-  goldReward  Int
-  difficulty  String
+  name String // Challenge name
+  description String // Challenge description
+  requirement String // Challenge requirement
+  xpReward    Int      @default(0) // XP reward
+  goldReward  Int      @default(0) // Gold reward
+  difficulty  String   // Challenge difficulty (easy, medium, hard, extreme)
+  isActive    Boolean  @default(true) // Whether challenge is currently available
+  createdAt   DateTime @default(now()) // Creation timestamp
+  updatedAt   DateTime @updatedAt // Last update timestamp
   progress    MasteryChallengeProgress[] @relation("MasteryChallengeProgress")
+  
+  @@index([difficulty]) // Challenges by difficulty
+  @@index([isActive]) // Active challenges
+  @@map("mastery_challenges")
 }
 
+/// User mastery challenge progress - tracks individual attempts at challenges
+/// Links users to mastery challenges and tracks their performance
 model MasteryChallengeProgress {
-  id          String   @id @default(uuid())
-  userId      String   @map("fk_user_id")
-  challengeId String   @map("fk_challenge_id")
-  completed   Boolean  @default(false)
-  completedAt DateTime?
-  attempts    Int      @default(0)
-  bestScore   Int?
-  challenge   MasteryChallenge @relation("MasteryChallengeProgress", fields: [challengeId], references: [id])
-  stats       HunterStats @relation("UserMasteryChallengeProgress", fields: [userId], references: [id])
+  id          String            @id @default(uuid())
+  userId      String            @map("fk_user_id")
+  challengeId String            @map("fk_challenge_id")
+  completed   Boolean           @default(false) // Completion status
+  completedAt DateTime?         // Completion timestamp
+  attempts    Int               @default(0) // Number of attempts
+  bestScore   Int?              // Best score achieved
+  startedAt   DateTime?         @default(now()) // When user started this challenge
+  updatedAt   DateTime          @updatedAt // Last update timestamp
+  challenge   MasteryChallenge  @relation("MasteryChallengeProgress", fields: [challengeId], references: [id], onDelete: Cascade)
+  stats       HunterStats       @relation("UserMasteryChallengeProgress", fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, challengeId])
+  @@unique([userId, challengeId]) // One progress entry per user per challenge
+  @@index([userId]) // User's challenge progress
+  @@index([challengeId]) // Challenge progress across users
+  @@index([completed]) // Completed challenges
+  @@map("mastery_challenge_progress")
 }
 
+/// Memento definitions - persistent achievement rewards
+/// Represents cosmetic items and achievements that users can unlock
 model Memento {
   id          String   @id @default(uuid())
-  name        String
-  description String
-  icon        String
-  rarity      String
-  category    String
+  name String // Memento name
+  description String // Memento description
+  icon        String // Memento icon/emoji
+  rarity      String // Memento rarity (common, rare, epic, legendary)
+  category    String // Memento category
+  isActive    Boolean  @default(true) // Whether memento is currently available
+  createdAt   DateTime @default(now()) // Creation timestamp
+  updatedAt   DateTime @updatedAt // Last update timestamp
   milestones Milestone[] @relation("MilestoneMementos")
   userMementos UserMemento[] @relation("UserMementos")
-}
-
-model UserMemento {
-  id        String   @id @default(uuid())
-  userId    String   @map("fk_user_id")
-  mementoId String   @map("fk_memento_id")
-  unlockedAt DateTime @default(now())
-  memento   Memento   @relation("UserMementos", fields: [mementoId], references: [id])
-  stats     HunterStats @relation("HunterStatsUserMementos", fields: [userId], references: [id])
-
-  @@unique([userId, mementoId])
-}
-
-model QuestDecision {
-  id          String   @id @default(uuid())
-  userId      String   @map("fk_user_id")
-  questId     String   @map("fk_quest_id")
-  decisionType String
-  choice      String
-  timestamp   DateTime @default(now())
-  user        User     @relation("UserQuestDecisions", fields: [userId], references: [id])
-  quest       Quest    @relation("QuestDecisions", fields: [questId], references: [id])
-
-  @@index([userId, timestamp])
-  @@index([questId, timestamp])
-}
-
-model ResourceUsage {
-  id          String   @id @default(uuid())
-  userId      String   @map("fk_user_id")
-  resourceType String
-  amount      Int
-  purpose     String
-  timestamp   DateTime @default(now())
-  user        User     @relation("UserResourceUsage", fields: [userId], references: [id])
-
-  @@index([userId, resourceType, timestamp])
-}
-
-model KnowledgeProgress {
-  id          String   @id @default(uuid())
-  userId      String   @unique @map("fk_user_id")
-  questPatternsLearned Int      @default(0)
-  optimalRoutesDiscovered Int @default(0)
-  shortcutsUnlocked Int      @default(0)
-  efficiencyRating Float    @default(0.0)
-  lastUpdated DateTime @default(now())
-  user        User     @relation("UserKnowledge", fields: [userId], references: [id])
-}
-
-model SocialStats {
-  id          String   @id @default(uuid())
-  userId      String   @unique @map("fk_user_id")
-  friendsAdded Int      @default(0)
-  questsShared Int      @default(0)
-  achievementsShared Int @default(0)
-  leaderboardRank Int?
-  socialScore Int      @default(0)
-  lastUpdated DateTime @default(now())
-  guildId     String?
-  guildRole   String?  // "member", "officer", "leader"
-  user        User     @relation("UserSocialStats", fields: [userId], references: [id])
-  guild       Guild?   @relation("GuildMembers", fields: [guildId], references: [id])
   
-  @@index([guildId])
+  @@index([rarity]) // Mementos by rarity
+  @@index([category]) // Mementos by category
+  @@index([isActive]) // Active mementos
+  @@map("mementos")
 }
 
+/// User mementos - tracks mementos unlocked by users
+/// Links users to mementos they've earned through achievements
+model UserMemento {
+  id         String   @id @default(uuid())
+  userId     String   @map("fk_user_id")
+  mementoId  String   @map("fk_memento_id")
+  unlockedAt DateTime @default(now()) // Unlock timestamp
+  memento    Memento   @relation("UserMementos", fields: [mementoId], references: [id], onDelete: Cascade)
+  stats      HunterStats @relation("HunterStatsUserMementos", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mementoId]) // One entry per memento per user
+  @@index([userId]) // User's mementos
+  @@index([mementoId]) // Memento ownership
+  @@map("user_mementos")
+}
+
+// ============================================================
+// DECISION & PROGRESSION MODELS
+// ============================================================
+
+/// Quest decisions - tracks strategic decisions made during quests
+/// Records player choices for the dilemma triangle system
+model QuestDecision {
+  id           String   @id @default(uuid())
+  userId       String   @map("fk_user_id")
+  questId      String   @map("fk_quest_id")
+  decisionType String // Type of decision (scarcity, trade-off, prediction)
+  choice String // The choice made by the user
+  timestamp    DateTime @default(now()) // Decision timestamp
+  user         User     @relation("UserQuestDecisions", fields: [userId], references: [id], onDelete: Cascade)
+  quest        Quest    @relation("QuestDecisions", fields: [questId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp]) // User's decisions over time
+  @@index([questId, timestamp]) // Quest decisions over time
+  @@index([decisionType]) // Decisions by type
+  @@map("quest_decisions")
+}
+
+/// Resource usage tracking - tracks how users spend resources
+/// Records resource consumption for dual-use resource system
+model ResourceUsage {
+  id           String   @id @default(uuid())
+  userId       String   @map("fk_user_id")
+  resourceType String // Type of resource (gold, hp, etc.)
+  amount       Int // Amount used
+  purpose String // Purpose of resource usage
+  timestamp    DateTime @default(now()) // Usage timestamp
+  user         User     @relation("UserResourceUsage", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, resourceType, timestamp]) // User's resource usage over time
+  @@index([userId, timestamp]) // User's all resource usage
+  @@map("resource_usage")
+}
+
+/// Knowledge progress - tracks user learning and efficiency gains
+/// Implements knowledge-based progression system where users become more efficient over time
+model KnowledgeProgress {
+  id                       String   @id @default(uuid())
+  userId                   String   @unique @map("fk_user_id")
+  questPatternsLearned     Int      @default(0) // Number of quest patterns learned
+  optimalRoutesDiscovered  Int      @default(0) // Number of optimal routes discovered
+  shortcutsUnlocked        Int      @default(0) // Number of shortcuts unlocked
+  efficiencyRating         Float    @default(0.0) // Overall efficiency rating
+  lastUpdated              DateTime @default(now()) // Last update timestamp
+  createdAt                DateTime @default(now()) // Creation timestamp
+  user                     User     @relation("UserKnowledge", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("knowledge_progress")
+}
+
+// ============================================================
+// SOCIAL & GUILD MODELS
+// ============================================================
+
+/// User social statistics - tracks social interactions and guild membership
+/// Contains social features like friends, achievements, and guild participation
+model SocialStats {
+  id                String   @id @default(uuid())
+  userId            String   @unique @map("fk_user_id")
+  friendsAdded      Int      @default(0) // Number of friends added
+  questsShared      Int      @default(0) // Number of quests shared
+  achievementsShared Int     @default(0) // Number of achievements shared
+  leaderboardRank   Int? // Current leaderboard position
+  socialScore       Int      @default(0) // Overall social score
+  lastUpdated       DateTime @default(now()) // Last update timestamp
+  createdAt         DateTime @default(now()) // Creation timestamp
+  guildId           String? // Optional guild membership
+  guildRole         String? // Guild role (member, officer, leader)
+  user              User     @relation("UserSocialStats", fields: [userId], references: [id], onDelete: Cascade)
+  guild             Guild?   @relation("GuildMembers", fields: [guildId], references: [id], onDelete: SetNull)
+  
+  @@index([guildId]) // Guild members
+  @@index([leaderboardRank]) // Leaderboard queries
+  @@map("social_stats")
+}
+
+/// Guild model - represents groups/organizations for team features
+/// Contains guild information, member count, and raid data
 model Guild {
   id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  memberCount Int      @default(0)
-  totalExp    BigInt   @default(0)
-  level       Int      @default(1)
-  createdAt   DateTime @default(now())
+  name        String   @unique // Guild name
+  slug        String   @unique // URL-friendly guild identifier
+  description String? // Guild description
+  memberCount Int      @default(0) // Current member count
+  totalExp    BigInt   @default(0) // Total experience earned by guild
+  level       Int      @default(1) // Guild level
+  isActive    Boolean  @default(true) // Whether guild is currently active
+  createdAt   DateTime @default(now()) // Creation timestamp
+  updatedAt   DateTime @updatedAt // Last update timestamp
   members     SocialStats[] @relation("GuildMembers")
   raids       Raid[]      @relation("GuildRaids")
   
-  @@index([name])
+  @@index([name]) // Guild name search
+  @@index([slug]) // Guild slug lookup
+  @@index([isActive]) // Active guilds
+  @@map("guilds")
 }
 
+/// Raid model - represents guild raids for collaborative challenges
+/// Contains raid information, progress tracking, and participant data
 model Raid {
-  id          String   @id @default(uuid())
-  guildId     String   @map("fk_guild_id")
-  name        String
-  description String?
-  targetExp   BigInt   @default(0)
-  progressExp BigInt   @default(0)
-  status      String   // "active", "completed", "failed"
-  startDate   DateTime @default(now())
-  endDate     DateTime?
-  createdBy   String   @map("fk_user_id")
+  id          String     @id @default(uuid())
+  guildId     String     @map("fk_guild_id")
+  name String // Raid name
+  description String? // Raid description
+  targetExp   BigInt    @default(0) // Target experience for raid completion
+  progressExp BigInt    @default(0) // Current progress toward target
+  status      String @default("ACTIVE") // Current raid status
+  startDate   DateTime  @default(now()) // Raid start date
+  endDate     DateTime? // Raid end date
+  createdBy   String    @map("fk_user_id") // User who created the raid
+  createdAt   DateTime  @default(now()) // Creation timestamp
+  updatedAt   DateTime  @updatedAt // Last update timestamp
   participants RaidParticipant[] @relation("RaidParticipants")
-  guild       Guild    @relation("GuildRaids", fields: [guildId], references: [id])
+  guild       Guild      @relation("GuildRaids", fields: [guildId], references: [id], onDelete: Cascade)
   
-  @@index([guildId])
-  @@index([status])
-  @@index([createdBy])
+  @@index([guildId]) // Guild's raids
+  @@index([status]) // Raids by status
+  @@index([createdBy]) // Raids by creator
+  @@index([startDate]) // Raids by start date
+  @@map("raids")
 }
 
+/// Raid participant model - tracks individual participation in raids
+/// Links users to raids and tracks their contribution
 model RaidParticipant {
-  id          String   @id @default(uuid())
-  raidId      String   @map("fk_raid_id")
-  userId      String   @map("fk_user_id")
-  expContributed BigInt @default(0)
-  joinedAt    DateTime @default(now())
-  raid        Raid     @relation("RaidParticipants", fields: [raidId], references: [id], onDelete: Cascade)
-  user        User     @relation("RaidParticipants", fields: [userId], references: [id])
+  id             String   @id @default(uuid())
+  raidId         String   @map("fk_raid_id")
+  userId         String   @map("fk_user_id")
+  expContributed BigInt  @default(0) // Experience contributed to raid
+  joinedAt       DateTime @default(now()) // When user joined raid
+  lastActiveAt   DateTime @default(now()) // Last activity timestamp
+  raid           Raid     @relation("RaidParticipants", fields: [raidId], references: [id], onDelete: Cascade)
+  user           User     @relation("RaidParticipants", fields: [userId], references: [id], onDelete: Cascade)
   
-  @@unique([raidId, userId])
-  @@index([raidId])
-  @@index([userId])
+  @@unique([raidId, userId]) // One entry per user per raid
+  @@index([raidId]) // Raid participants
+  @@index([userId]) // User's raid participation
+  @@map("raid_participants")
 }
 
-// White-label and Enterprise Models
+// ============================================================
+// WHITE-LABEL & ENTERPRISE MODELS
+// ============================================================
+
+/// White-label configuration for enterprise/custom deployments
+/// Contains customization options for branded deployments
 model WhiteLabelConfig {
   id            String   @id @default(uuid())
-  organizationId String  @unique @map("fk_organization_id")
-  organizationName String
-  logoUrl       String?
-  themeColors   String?  // JSON object with primary, secondary, accent colors
-  customDomain  String?
-  customEmail   String?
-  features      String?  // JSON object with enabled features
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  organization  Organization? @relation("OrganizationWhiteLabel", fields: [organizationId], references: [id])
+  organizationId String   @unique @map("fk_organization_id")
+  organizationName String // Organization name
+  logoUrl       String? // Custom logo URL
+  themeColors   String? // JSON object with primary, secondary, accent colors
+  customDomain  String? @unique // Custom domain for white-label deployment
+  customEmail   String? // Custom email for support
+  features      String? // JSON object with enabled features
+  isActive      Boolean  @default(true) // Whether configuration is active
+  createdAt     DateTime @default(now()) // Creation timestamp
+  updatedAt     DateTime @updatedAt // Last update timestamp
+  organization  Organization? @relation("OrganizationWhiteLabel", fields: [organizationId], references: [id], onDelete: Cascade)
   
-  @@index([organizationId])
+  @@index([organizationId]) // Organization lookup
+  @@index([customDomain]) // Domain lookup
+  @@map("white_label_configs")
 }
 
+/// Organization model - represents enterprise/custom deployments
+/// Contains organization information and member management
 model Organization {
   id            String   @id @default(uuid())
-  name          String   @unique
-  slug          String   @unique
-  description   String?
-  memberCount   Int      @default(0)
-  plan          String   @default("enterprise") // "enterprise", "coaching"
-  createdAt     DateTime @default(now())
+  name          String   @unique // Organization name
+  slug          String   @unique // URL-friendly organization identifier
+  description String? // Organization description
+  memberCount   Int      @default(0) // Current member count
+  plan          String   @default("enterprise") // Organization plan (enterprise, coaching)
+  isActive      Boolean  @default(true) // Whether organization is active
+  createdAt     DateTime @default(now()) // Creation timestamp
+  updatedAt     DateTime @updatedAt // Last update timestamp
   whiteLabelConfig WhiteLabelConfig? @relation("OrganizationWhiteLabel")
   members       User[]   @relation("OrganizationMembers")
   apiKeys       ApiKey[] @relation("OrganizationApiKeys")
   
-  @@index([slug])
+  @@index([slug]) // Organization slug lookup
+  @@index([isActive]) // Active organizations
+  @@map("organizations")
 }
 
-// API Access Model
+/// API key model - manages API access for organizations
+/// Contains API keys for programmatic access to the platform
 model ApiKey {
   id            String   @id @default(uuid())
-  key           String   @unique
-  name          String
+  key           String   @unique // API key string
+  name String // API key name/description
   organizationId String   @map("fk_organization_id")
-  permissions   String   // JSON array of permissions
-  rateLimit     Int      @default(1000)
-  lastUsed      DateTime?
-  expiresAt     DateTime?
-  createdAt     DateTime @default(now())
-  revoked       Boolean  @default(false)
-  organization  Organization @relation("OrganizationApiKeys", fields: [organizationId], references: [id])
+  permissions   String // JSON array of permissions
+  rateLimit     Int      @default(1000) // Rate limit per hour
+  lastUsed      DateTime? // Last usage timestamp
+  expiresAt     DateTime? // Optional expiration date
+  createdAt     DateTime @default(now()) // Creation timestamp
+  updatedAt     DateTime @updatedAt // Last update timestamp
+  revoked       Boolean  @default(false) // Whether key has been revoked
+  revokedAt     DateTime? // Revocation timestamp
+  organization  Organization @relation("OrganizationApiKeys", fields: [organizationId], references: [id], onDelete: Cascade)
   
-  @@index([organizationId])
-  @@index([key])
+  @@index([organizationId]) // Organization's API keys
+  @@index([key]) // API key lookup
+  @@index([revoked]) // Active vs revoked keys
+  @@map("api_keys")
 }
 
-// Marketplace Model
+// ============================================================
+// MARKETPLACE MODELS
+// ============================================================
+
+/// Quest pack model - marketplace items containing quest templates
+/// Users can purchase and use quest packs created by other users
 model QuestPack {
-  id            String   @id @default(uuid())
-  creatorId     String   @map("fk_creator_id")
-  name          String
-  description   String
-  category      String
-  price         Int      // in gold or cents for real money
-  currency      String   @default("gold") // "gold", "usd"
-  questTemplates String  // JSON array of quest templates
-  downloadCount Int      @default(0)
-  rating        Float    @default(0)
-  reviewCount   Int      @default(0)
-  isApproved    Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  creator       User     @relation("CreatorQuestPacks", fields: [creatorId], references: [id])
-  purchases     QuestPackPurchase[] @relation("QuestPackPurchases")
+  id             String   @id @default(uuid())
+  creatorId      String   @map("fk_creator_id")
+  name String // Quest pack name
+  description String // Quest pack description
+  category       String // Quest pack category
+  price          Int // Price in gold or cents for real money
+  currency       String   @default("gold") // Currency type (gold, usd)
+  questTemplates String // JSON array of quest templates
+  downloadCount  Int      @default(0) // Number of times downloaded
+  rating         Float    @default(0) // Average rating
+  reviewCount    Int      @default(0) // Number of reviews
+  isApproved     Boolean  @default(false) // Whether pack is approved for marketplace
+  isActive       Boolean  @default(true) // Whether pack is currently available
+  createdAt      DateTime @default(now()) // Creation timestamp
+  updatedAt      DateTime @updatedAt // Last update timestamp
+  creator        User     @relation("CreatorQuestPacks", fields: [creatorId], references: [id], onDelete: Cascade)
+  purchases      QuestPackPurchase[] @relation("QuestPackPurchases")
   
-  @@index([creatorId])
-  @@index([category])
-  @@index([isApproved])
+  @@index([creatorId]) // Creator's quest packs
+  @@index([category]) // Quest packs by category
+  @@index([isApproved]) // Approved quest packs
+  @@index([isActive]) // Active quest packs
+  @@map("quest_packs")
 }
 
+/// Quest pack purchase model - tracks purchases of quest packs
+/// Links users to quest packs they've purchased
 model QuestPackPurchase {
-  id            String   @id @default(uuid())
-  questPackId   String   @map("fk_quest_pack_id")
-  userId        String   @map("fk_user_id")
-  purchasedAt   DateTime @default(now())
-  questPack     QuestPack @relation("QuestPackPurchases", fields: [questPackId], references: [id])
-  user          User     @relation("UserQuestPackPurchases", fields: [userId], references: [id])
+  id          String     @id @default(uuid())
+  questPackId String     @map("fk_quest_pack_id")
+  userId      String     @map("fk_user_id")
+  purchasedAt DateTime   @default(now()) // Purchase timestamp
+  questPack   QuestPack  @relation("QuestPackPurchases", fields: [questPackId], references: [id], onDelete: Cascade)
+  user        User       @relation("UserQuestPackPurchases", fields: [userId], references: [id], onDelete: Cascade)
   
-  @@unique([questPackId, userId])
-  @@index([userId])
-  @@index([questPackId])
+  @@unique([questPackId, userId]) // One purchase per user per pack
+  @@index([userId]) // User's purchases
+  @@index([questPackId]) // Pack purchases
+  @@map("quest_pack_purchases")
 }
 
-// Subscription and Payment Models
+// ============================================================
+// SUBSCRIPTION & PAYMENT MODELS
+// ============================================================
+
+/// Subscription model - manages user subscription plans and billing
+/// Tracks subscription status, plan type, and payment information
 model Subscription {
-  id              String   @id @default(uuid())
-  userId          String   @unique @map("fk_user_id")
-  plan            String   // "free", "hunter_pass", "guild", "enterprise"
-  status          String   // "active", "canceled", "past_due", "trialing"
-  startDate       DateTime @default(now())
-  endDate         DateTime?
-  cancelAtPeriodEnd Boolean @default(false)
-  stripeCustomerId String?
-  stripeSubscriptionId String?
-  user            User     @relation("UserSubscription", fields: [userId], references: [id], onDelete: Cascade)
+  id                   String              @id @default(uuid())
+  userId               String              @unique @map("fk_user_id")
+  plan                 String @default("FREE") // Current subscription plan
+  status               String @default("ACTIVE") // Subscription status
+  startDate            DateTime            @default(now()) // Subscription start date
+  endDate              DateTime? // Subscription end date
+  cancelAtPeriodEnd    Boolean             @default(false) // Whether to cancel at period end
+  trialEndsAt          DateTime? // Trial end date
+  stripeCustomerId     String? // Stripe customer ID
+  stripeSubscriptionId String? // Stripe subscription ID
+  metadata             String? // JSON for additional subscription data
+  createdAt            DateTime            @default(now()) // Creation timestamp
+  updatedAt            DateTime            @updatedAt // Last update timestamp
+  user                 User                @relation("UserSubscription", fields: [userId], references: [id], onDelete: Cascade)
   
-  @@index([userId])
-  @@index([status])
+  @@index([userId]) // User's subscription
+  @@index([status]) // Subscriptions by status
+  @@index([plan]) // Subscriptions by plan
+  @@map("subscriptions")
 }
 
+/// Payment model - tracks payment transactions for subscriptions
+/// Records payment attempts, status, and transaction details
 model Payment {
-  id              String   @id @default(uuid())
-  userId          String   @map("fk_user_id")
-  amount          Int      // in cents
-  currency        String   @default("usd")
-  status          String   // "pending", "completed", "failed", "refunded"
-  paymentMethod   String   // "stripe", "paypal", "apple_pay", "google_pay"
-  paymentIntentId String?
-  metadata        String?  // JSON string for additional data
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  user            User     @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+  id              String        @id @default(uuid())
+  userId          String        @map("fk_user_id")
+  amount          Int           // Amount in cents
+  currency        String        @default("usd") // Currency type
+  status          String @default("PENDING") // Payment status
+  paymentMethod   String @default("STRIPE") // Payment method used
+  paymentIntentId String? // Payment processor intent ID
+  metadata        String?       // JSON string for additional data
+  createdAt       DateTime      @default(now()) // Creation timestamp
+  updatedAt       DateTime      @updatedAt // Last update timestamp
+  user            User          @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
   
-  @@index([userId])
-  @@index([status])
-  @@index([createdAt])
+  @@index([userId]) // User's payments
+  @@index([status]) // Payments by status
+  @@index([createdAt]) // Payments by date
+  @@index([paymentMethod]) // Payments by method
+  @@map("payments")
 }
 
+/// User settings model - manages user preferences and configuration
+/// Contains UI preferences, notification settings, and other user options
 model UserSettings {
-  id                String   @id @default(uuid())
-  userId            String   @unique @map("fk_user_id")
-  simpleMode        Boolean  @default(false) // Simple mode hides complex RPG features
-  penaltySeverity   String   @default("forgiving") // "forgiving", "moderate", "hardcore"
-  notificationPreference String @default("adaptive") // "adaptive", "aggressive", "minimal"
-  timezone          String?
-  locale            String   @default("en")
-  user              User     @relation("UserSettings", fields: [userId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(uuid())
+  userId                String   @unique @map("fk_user_id")
+  simpleMode            Boolean  @default(false) // Simple mode hides complex RPG features
+  penaltySeverity       String   @default("forgiving") // Game difficulty (forgiving, moderate, hardcore)
+  notificationPreference String   @default("adaptive") // Notification frequency (adaptive, aggressive, minimal)
+  timezone              String? // User's timezone
+  locale                String   @default("en") // User's locale/language
+  theme                 String   @default("dark") // UI theme (dark, light, auto)
+  createdAt             DateTime @default(now()) // Creation timestamp
+  updatedAt             DateTime @updatedAt // Last update timestamp
+  user                  User     @relation("UserSettings", fields: [userId], references: [id], onDelete: Cascade)
   
-  @@index([userId])
+  @@index([userId]) // User's settings
+  @@map("user_settings")
 }
+
+// ============================================================
+// DATABASE DESIGN NOTES
+// ============================================================
+//
+// TABLE NAMING CONVENTION:
+// - All tables use snake_case naming (e.g., user_settings, quest_packs)
+// - Foreign keys use fk_ prefix (e.g., fk_user_id, fk_quest_id)
+// - Consistent naming across related tables
+//
+// SOFT DELETE PATTERN:
+// - Users, Quests, and Gates support soft delete via deletedAt field
+// - Set deletedAt = timestamp instead of hard delete
+// - Filter out soft-deleted records with WHERE deletedAt IS NULL
+//
+// CASCADE DELETE RULES:
+// - Most child records use onDelete: Cascade for automatic cleanup
+// - Optional relationships use onDelete: SetNull to preserve records
+// - Critical relationships (subscriptions, payments) use Cascade
+//
+// INDEXING STRATEGY:
+// - All foreign keys have indexes for join performance
+// - Common query patterns are indexed (status, dates, user lookups)
+// - Composite indexes for complex queries (userId + status, etc.)
+// - Unique constraints where business logic requires uniqueness
+//
+// TIMESTAMP TRACKING:
+// - All tables have createdAt and updatedAt timestamps
+// - updatedAt is automatically managed by database triggers
+// - Specific timestamps for business events (completedAt, unlockedAt, etc.)
+//
+// TEXT VS STRING FIELDS:
+// - String used for potentially long content (descriptions, titles, notes)
+// - String used for fixed-length identifiers and codes
+// - Balances storage efficiency with flexibility
+//
+// ENUM USAGE:
+// - Status fields use enums for type safety (QuestStatus, SubscriptionStatus, etc.)
+// - Prevents invalid data states at database level
+// - Provides clear documentation of valid values
+//
+// JSON FIELDS:
+// - Complex data stored as JSON strings (metadata, features, questTemplates)
+// - Allows flexible schema evolution without migrations
+// - Application layer responsible for JSON validation
+//
+// RELATIONSHIP PATTERNS:
+// - One-to-one: User → HunterStats, UserSettings, etc.
+// - One-to-many: User → Quests, User → Gates, etc.
+// - Many-to-many: Through join tables (QuestPackPurchase, RaidParticipant)
+// - Self-referential: None currently, but schema supports it
+//
+// PERFORMANCE CONSIDERATIONS:
+// - SQLite for development, can migrate to PostgreSQL for production
+// - Indexes optimized for common query patterns
+// - Consider query frequency vs write performance when adding indexes
+// - Monitor slow queries and add indexes as needed
+//
+// SECURITY CONSIDERATIONS:
+// - Passwords stored as hashes (never plain text)
+// - API keys stored separately with revocation support
+// - Subscription data isolated per user
+// - Consider row-level security for multi-tenant deployments

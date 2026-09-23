@@ -58,7 +58,7 @@ export const StatDashboard = () => {
             snap: { value: 1 },
             onUpdate: function () {
               if (el) {
-                el.textContent = Math.round(this.targets()[0].value);
+                el.textContent = String(Math.round(this.targets()[0].value));
               }
             },
           }

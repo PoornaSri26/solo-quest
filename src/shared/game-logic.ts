@@ -1,5 +1,3 @@
-import { HunterStats } from './types';
-
 const BASE_XP = 100;
 
 /**
@@ -69,7 +67,7 @@ export const calculateDynamicDifficulty = (
  * Based on game design principles of clear goals and meaningful rewards
  */
 export const calculateQuestSatisfaction = (
-  difficulty: number,
+  _difficulty: number,
   timeSpent: number, // in minutes
   rewards: { xp: number; gold: number }
 ): number => {
@@ -218,7 +216,7 @@ export const hpChangeForEvent = (event: 'miss_deadline' | 'fail_dungeon' | 'idle
  * Quests that serve multiple purposes to create strategic depth
  */
 export const calculateDualPurposeBonus = (
-  questPurposes: string[], // e.g., ['daily', 'streak', 'achievement', 'lore']
+  _questPurposes: string[], // e.g., ['daily', 'streak', 'achievement', 'lore']
   completionContext: {
     isDaily: boolean;
     contributesToStreak: boolean;
@@ -259,7 +257,7 @@ export const calculateAchievementProgress = (
     socialInteractions: number;
   }
 ): { progress: number; completed: boolean } => {
-  const thresholds = {
+  const thresholds: Record<string, Record<string, number>> = {
     exploration: { uniqueQuestTypes: 20, totalQuestsCompleted: 100 },
     mastery: { uniqueQuestTypes: 15, highestStreak: 30 },
     social: { socialInteractions: 50, daysActive: 30 },

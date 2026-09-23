@@ -8,7 +8,7 @@ interface QuestDecisionProps {
   onCancel: () => void;
 }
 
-export default function QuestDecision({ questId, onDecision, onCancel }: QuestDecisionProps) {
+export default function QuestDecision({ onDecision, onCancel }: QuestDecisionProps) {
   const [selectedDecision, setSelectedDecision] = useState<DecisionType | null>(null);
   const [selectedChoice, setSelectedChoice] = useState<string>('');
 

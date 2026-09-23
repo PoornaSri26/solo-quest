@@ -11,8 +11,12 @@ import {
   Notification,
   ShopItem,
   InventoryItem,
+  HunterClass,
+  RankSuggestion,
+  LootItem,
+  QuestSuggestion,
 } from '../shared/types';
-import { connectSocket, disconnectSocket, getConnectionStatus } from '../lib/socket';
+import { connectSocket, disconnectSocket } from '../lib/socket';
 import { getHunterAvatarUrl } from '../lib/avatars';
 import { createAuthApi } from '../lib/api';
 
@@ -65,6 +69,13 @@ interface AppState {
 
   // Game Design Improvements
   feedbackIntensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null;
+
+  // Gameplay systems
+  lootEvent: LootItem | null;
+  questSuggestion: QuestSuggestion | null;
+
+  // Toast notifications
+  toasts: Array<{ id: string; type: 'success' | 'error' | 'warning' | 'info'; message: string; duration?: number }>;
 
   // UI Mode
   uiMode: 'minimal' | 'dense';
@@ -129,6 +140,19 @@ interface AppState {
   setFeedbackIntensity: (intensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null) => void;
   setUIMode: (mode: 'minimal' | 'dense') => void;
 
+  // Gameplay system actions
+  setHunterClass: (hunterClass: HunterClass) => Promise<void>;
+  checkIn: (energy: number, mood: number) => Promise<RankSuggestion | null>;
+  fetchQuestSuggestion: () => Promise<void>;
+  snoozeQuest: (questId: string, hours?: number) => Promise<void>;
+  saveReflection: (questId: string, reflection: string) => Promise<void>;
+  purchaseStreakWard: () => Promise<void>;
+  clearLootEvent: () => void;
+
+  // Toast actions
+  addToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, duration?: number) => void;
+  removeToast: (id: string) => void;
+
   // WebSocket
   connectWebSocket: () => void;
   disconnectWebSocket: () => void;
@@ -164,6 +188,9 @@ export const useStore = create<AppState>()(
         questSummary: { total: 0, completed: 0, active: 0, failed: 0 },
         rankUpEvent: null,
         feedbackIntensity: null,
+        lootEvent: null,
+        questSuggestion: null,
+        toasts: [],
         uiMode: 'minimal',
         isQuestModalOpen: false,
         isEditQuestModalOpen: false,
@@ -215,6 +242,7 @@ export const useStore = create<AppState>()(
 
         logout: () => {
           get().disconnectWebSocket();
+          set({ lootEvent: null, questSuggestion: null });
           set({
             hunter: null,
             stats: null,
@@ -318,6 +346,14 @@ export const useStore = create<AppState>()(
             console.log(`[System] Level Up! Now Level ${data.level} (Rank ${data.rank})`);
             set({ rankUpEvent: data });
           });
+
+          socket.on('loot:dropped', (loot: LootItem) => {
+            set({ lootEvent: loot });
+            // Auto-clear after the payoff animation window
+            setTimeout(() => {
+              if (get().lootEvent?.id === loot.id) set({ lootEvent: null });
+            }, 3500);
+          });
         },
 
         disconnectWebSocket: () => {
@@ -325,6 +361,92 @@ export const useStore = create<AppState>()(
         },
 
         clearRankUpEvent: () => set({ rankUpEvent: null }),
+
+        // ========================
+        // Gameplay system actions
+        // ========================
+
+        setHunterClass: async (hunterClass) => {
+          const state = get();
+          if (!state.token) return;
+          try {
+            const api = createAuthApi(() => state.token);
+            await api.post('/hunter/class', { hunterClass });
+            await get().fetchStats();
+          } catch (error) {
+            console.error('Set class error:', error);
+            throw error;
+          }
+        },
+
+        checkIn: async (energy, mood) => {
+          const state = get();
+          if (!state.token) return null;
+          try {
+            const api = createAuthApi(() => state.token);
+            const data = await api.post<{ energy: number; mood: number; suggestion: RankSuggestion }>('/hunter/check-in', { energy, mood });
+            await get().fetchStats();
+            return data.suggestion;
+          } catch (error) {
+            console.error('Check-in error:', error);
+            return null;
+          }
+        },
+
+        fetchQuestSuggestion: async () => {
+          const state = get();
+          if (!state.token) return;
+          try {
+            const api = createAuthApi(() => state.token);
+            const data: QuestSuggestion = await api.get('/quests/suggested');
+            set({ questSuggestion: data });
+          } catch (error) {
+            console.error('Fetch quest suggestion error:', error);
+          }
+        },
+
+        snoozeQuest: async (questId, hours = 24) => {
+          const state = get();
+          if (!state.token) return;
+          try {
+            const api = createAuthApi(() => state.token);
+            await api.post(`/quests/${questId}/snooze`, { hours });
+            await get().fetchQuests();
+          } catch (error: any) {
+            const message = error?.data?.error || 'Failed to snooze quest.';
+            get().addToast('warning', message);
+            throw error;
+          }
+        },
+
+        saveReflection: async (questId, reflection) => {
+          const state = get();
+          if (!state.token) return;
+          try {
+            const api = createAuthApi(() => state.token);
+            await api.post(`/quests/${questId}/reflection`, { reflection });
+          } catch (error) {
+            console.error('Save reflection error:', error);
+            throw error;
+          }
+        },
+
+        purchaseStreakWard: async () => {
+          const state = get();
+          if (!state.token) return;
+          try {
+            const api = createAuthApi(() => state.token);
+            const data = await api.post<{ message: string }>('/hunter/streak-ward');
+            get().addToast('success', data.message);
+            await get().fetchStats();
+          } catch (error: any) {
+            const message = error?.data?.error || 'Failed to purchase streak ward.';
+            get().addToast('error', message);
+            throw error;
+          }
+        },
+
+        clearLootEvent: () => set({ lootEvent: null }),
 
         // ========================
         // Fetchers
@@ -819,6 +941,23 @@ export const useStore = create<AppState>()(
 
         setUIMode: (mode) => {
           set({ uiMode: mode });
+        },
+
+        // ========================
+        // Toast actions
+        // ========================
+
+        addToast: (type, message, duration) => {
+          const id = Math.random().toString(36).substring(2, 9);
+          set((prev) => ({
+            toasts: [...prev.toasts, { id, type, message, duration }],
+          }));
+        },
+
+        removeToast: (id) => {
+          set((prev) => ({
+            toasts: prev.toasts.filter((toast) => toast.id !== id),
+          }));
         },
       }),
       {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Share2, Trophy, Award, TrendingUp, Plus, Edit, Trash2 } from 'lucide-react';
+import { Users, Share2, Trophy, Award, TrendingUp } from 'lucide-react';
 import { SocialStats } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';

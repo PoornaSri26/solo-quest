@@ -1,8 +1,17 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { createAuthApi } from '../lib/api';
-import { Zap, Heart, Bell, ArrowRight, CheckCircle } from 'lucide-react';
+import { HunterClass } from '../shared/types';
+
+const CLASS_OPTIONS: Array<{ value: HunterClass; emoji: string; name: string; desc: string }> = [
+  { value: 'WARRIOR', emoji: '⚔️', name: 'Warrior', desc: 'Momentum through action. Fitness & combat quests feel natural.' },
+  { value: 'MAGE', emoji: '🔮', name: 'Mage', desc: 'Curiosity as power. Creative and exploratory quests.' },
+  { value: 'SCHOLAR', emoji: '📚', name: 'Scholar', desc: 'Knowledge is your blade. Study and deep-work quests.' },
+  { value: 'ASSASSIN', emoji: '🗡️', name: 'Assassin', desc: 'Efficiency above all. Quick, focused task strikes.' },
+  { value: 'RANGER', emoji: '🏹', name: 'Ranger', desc: 'Versatile and adaptable. Balanced across all categories.' },
+  { value: 'NONE', emoji: '⭕', name: 'Undecided', desc: 'Skip for now — you can choose later in settings.' },
+];
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -11,6 +20,7 @@ export default function OnboardingPage() {
     simpleMode: false,
     penaltySeverity: 'forgiving',
     notificationPreference: 'adaptive',
+    hunterClass: 'NONE' as HunterClass,
   });
 
   const { initializeApp } = useStore();
@@ -18,7 +28,14 @@ export default function OnboardingPage() {
   const handleComplete = async () => {
     try {
       const api = createAuthApi(() => useStore.getState().token);
-      await api.patch('/settings', preferences);
+      await api.patch('/settings', {
+        simpleMode: preferences.simpleMode,
+        penaltySeverity: preferences.penaltySeverity,
+        notificationPreference: preferences.notificationPreference,
+      });
+      if (preferences.hunterClass !== 'NONE') {
+        await api.post('/hunter/class', { hunterClass: preferences.hunterClass });
+      }
       await initializeApp();
       navigate('/dashboard');
     } catch (error) {
@@ -78,6 +95,29 @@ export default function OnboardingPage() {
               Focus on completing quests without complex RPG mechanics
             </p>
           </button>
+        </div>
+      ),
+    },
+    {
+      title: "Choose Your Class",
+      description: "Every hunter walks a different path (#24)",
+      content: (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {CLASS_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setPreferences({ ...preferences, hunterClass: option.value })}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                preferences.hunterClass === option.value
+                  ? 'border-purple-500 bg-purple-500/10'
+                  : 'border-slate-700 hover:border-slate-600'
+              }`}
+            >
+              <div className="text-2xl mb-1">{option.emoji}</div>
+              <h3 className="text-white font-semibold text-sm">{option.name}</h3>
+              <p className="text-gray-400 text-xs mt-1">{option.desc}</p>
+            </button>
+          ))}
         </div>
       ),
     },
@@ -146,7 +186,7 @@ export default function OnboardingPage() {
           <div className="bg-slate-800 p-4 rounded-xl mb-6">
             <div className="text-sm text-gray-400 mb-2">Your Setup:</div>
             <div className="text-white">
-              {preferences.simpleMode ? 'Simple Mode' : 'Full Experience'} • {preferences.penaltySeverity} penalties • {preferences.notificationPreference} notifications
+              {preferences.simpleMode ? 'Simple Mode' : 'Full Experience'} • {preferences.hunterClass !== 'NONE' ? CLASS_OPTIONS.find(c => c.value === preferences.hunterClass)?.name : 'No class'} • {preferences.penaltySeverity} penalties • {preferences.notificationPreference} notifications
             </div>
           </div>
         </div>

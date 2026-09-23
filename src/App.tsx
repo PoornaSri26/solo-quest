@@ -7,8 +7,10 @@ import LandingPage from './pages/LandingPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SystemToastContainer from './components/SystemToastContainer';
 import QuestFeedback from './components/QuestFeedback';
+import LootPopup from './components/LootPopup';
 import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
+import { SkipLink } from './components/SkipLink';
 import { getAvatarUrl } from './lib/avatars';
 import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X, Trophy, Gem, Target, Brain, Users, Flag } from 'lucide-react';
 
@@ -70,12 +72,16 @@ const AppLayout: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-void text-text-primary">
+      <SkipLink />
+      
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border-subtle flex items-center justify-between px-4 z-40">
         <div className="font-display text-gold-primary text-xl tracking-wider">Solo Quest</div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           className="p-2 text-text-secondary hover:text-text-primary transition-fast"
+          aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={isMobileMenuOpen}
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
@@ -123,7 +129,7 @@ const AppLayout: React.FC = () => {
           <UIModeToggle />
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1" aria-label="Main navigation">
           <NavLink
             to="/dashboard"
             end
@@ -135,7 +141,7 @@ const AppLayout: React.FC = () => {
               }
             `}
           >
-            <Swords className="w-4 h-4" />
+            <Swords className="w-4 h-4" aria-hidden="true" />
             Dashboard
           </NavLink>
           <NavLink
@@ -148,7 +154,7 @@ const AppLayout: React.FC = () => {
               }
             `}
           >
-            <ScrollText className="w-4 h-4" />
+            <ScrollText className="w-4 h-4" aria-hidden="true" />
             Quest Log
           </NavLink>
           <NavLink
@@ -158,7 +164,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <DoorOpen className="w-4 h-4" />
+            <DoorOpen className="w-4 h-4" aria-hidden="true" />
             Gates
           </NavLink>
           <NavLink
@@ -168,7 +174,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <User className="w-4 h-4" />
+            <User className="w-4 h-4" aria-hidden="true" />
             Hunter Profile
           </NavLink>
           <NavLink
@@ -178,7 +184,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Ghost className="w-4 h-4" />
+            <Ghost className="w-4 h-4" aria-hidden="true" />
             Shadow Realm
           </NavLink>
           <NavLink
@@ -188,7 +194,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Store className="w-4 h-4" />
+            <Store className="w-4 h-4" aria-hidden="true" />
             Shop
           </NavLink>
           <NavLink
@@ -198,7 +204,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Trophy className="w-4 h-4" />
+            <Trophy className="w-4 h-4" aria-hidden="true" />
             Milestones
           </NavLink>
           <NavLink
@@ -208,7 +214,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Target className="w-4 h-4" />
+            <Target className="w-4 h-4" aria-hidden="true" />
             Mastery
           </NavLink>
           <NavLink
@@ -218,7 +224,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Gem className="w-4 h-4" />
+            <Gem className="w-4 h-4" aria-hidden="true" />
             Mementos
           </NavLink>
           <NavLink
@@ -228,7 +234,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Brain className="w-4 h-4" />
+            <Brain className="w-4 h-4" aria-hidden="true" />
             Knowledge
           </NavLink>
           <NavLink
@@ -238,7 +244,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-4 h-4" aria-hidden="true" />
             Social
           </NavLink>
           <NavLink
@@ -248,7 +254,7 @@ const AppLayout: React.FC = () => {
               ${isActive ? 'bg-raised text-text-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
             `}
           >
-            <Flag className="w-4 h-4" />
+            <Flag className="w-4 h-4" aria-hidden="true" />
             Progression
           </NavLink>
         </nav>
@@ -269,7 +275,7 @@ const AppLayout: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto pt-16 md:pt-0">
+      <main id="main-content" className="flex-1 overflow-y-auto pt-16 md:pt-0" tabIndex={-1}>
         <Routes>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/quests" element={
@@ -332,7 +338,7 @@ const AppLayout: React.FC = () => {
       </main>
 
       <SystemToastContainer />
-      
+
       {/* Game Design: Quest Feedback System */}
       {feedbackIntensity && (
         <QuestFeedback 
@@ -340,6 +346,9 @@ const AppLayout: React.FC = () => {
           onComplete={() => useStore.getState().setFeedbackIntensity(null)}
         />
       )}
+
+      {/* Gameplay: Loot drop battle payoff */}
+      <LootPopup />
     </div>
   );
 };
