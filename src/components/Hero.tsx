@@ -1,9 +1,13 @@
-﻿import { useEffect, useRef, Suspense } from 'react';
+﻿import { useEffect, useRef, Suspense, lazy } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useNavigate } from 'react-router-dom';
 import { ThreeScene } from './ThreeScene';
 import './Hero.css';
+
+// Marketing hook (3D report #301): the S-rank hunter showcase is lazy-loaded
+// so the landing page's initial bundle never pays the three.js cost.
+const AvatarHeroShowcase = lazy(() => import('./AvatarHeroShowcase'));
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -43,7 +47,8 @@ export const Hero = () => {
       <div className="absolute inset-0 bg-radial-vignette z-[1] pointer-events-none" />
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-3xl mx-auto">
+      <div className="relative z-10 flex flex-col lg:flex-row items-center justify-center gap-10 lg:gap-16 px-6 max-w-6xl mx-auto w-full">
+        <div className="flex flex-col items-center text-center max-w-3xl">
         <div ref={badgeRef} className="mb-6 px-4 py-1.5 border border-violet-gate/50 bg-violet-gate/10 rounded-full text-xs font-system text-text-system tracking-widest uppercase">
           [System: Awakening Protocol Initiated]
         </div>
@@ -81,6 +86,14 @@ export const Hero = () => {
         <p className="mt-6 text-xs text-text-muted font-system tracking-wider">
           ↓ Scroll to witness the System
         </p>
+        </div>
+
+        {/* 3D hunter showcase (marketing hook, #301) — hidden on short viewports */}
+        <div className="hidden md:flex items-center justify-center shrink-0">
+          <Suspense fallback={null}>
+            <AvatarHeroShowcase />
+          </Suspense>
+        </div>
       </div>
     </section>
   );

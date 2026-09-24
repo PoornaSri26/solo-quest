@@ -788,6 +788,7 @@ model UserSettings {
   timezone              String? // User's timezone
   locale                String   @default("en") // User's locale/language
   theme                 String   @default("dark") // UI theme (dark, light, auto)
+  avatarConfig          String?  // JSON-serialized 3D avatar config: { bodyType, skinTone, armorColor, accentColor, hairStyle, hairColor, classSigil }
   createdAt             DateTime @default(now()) // Creation timestamp
   updatedAt             DateTime @updatedAt // Last update timestamp
   user                  User     @relation("UserSettings", fields: [userId], references: [id], onDelete: Cascade)

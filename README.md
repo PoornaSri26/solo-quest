@@ -4,6 +4,7 @@
 
 Solo Quest is a gamified productivity application that turns your daily tasks into quests, your goals into raids, and your personal growth into character progression. Inspired by the hit webtoon "Solo Leveling," this app brings the thrill of RPG progression to your real-life achievements.
 
+[![CI](https://github.com/PoornaSri26/solo-quest/actions/workflows/ci.yml/badge.svg)](https://github.com/PoornaSri26/solo-quest/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB)](https://reactjs.org/)
@@ -402,7 +403,7 @@ For support, feature requests, or bug reports:
 
 - **Frontend Build**: 2,756 modules, ~40s build time
 - **Backend Build**: TypeScript compilation, ~10s build time
-- **Test Suite**: 22 tests, 100% pass rate
+- **Test Suite**: 70 tests, 100% pass rate (CI-gated)
 - **API Response Time**: < 100ms P99 (with caching)
 - **WebSocket Latency**: < 50ms average
 

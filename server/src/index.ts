@@ -548,7 +548,16 @@ app.get('/api/settings', authenticateToken, async (req, res) => {
       });
     }
 
-    res.json(settings);
+    // Deserialize avatarConfig for the client (#9)
+    let avatarConfig: unknown = null;
+    if (settings.avatarConfig) {
+      try {
+        avatarConfig = JSON.parse(settings.avatarConfig);
+      } catch {
+        avatarConfig = null;
+      }
+    }
+    res.json({ ...settings, avatarConfig });
   } catch (error) {
     logger.error('Get settings error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -589,7 +598,32 @@ app.get('/api/settings', authenticateToken, async (req, res) => {
 app.patch('/api/settings', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);
-    const { simpleMode, penaltySeverity, notificationPreference, timezone, locale } = req.body;
+    const { simpleMode, penaltySeverity, notificationPreference, timezone, locale, avatarConfig } = req.body;
+
+    // 3D avatar config validation (#9/#293): strict whitelist, hex-only colors,
+    // size-capped. Malformed payloads are rejected rather than silently stored.
+    let validatedAvatarConfig: Record<string, string> | undefined;
+    if (avatarConfig !== undefined) {
+      if (avatarConfig === null || typeof avatarConfig !== 'object' || Array.isArray(avatarConfig)) {
+        return res.status(400).json({ error: 'avatarConfig must be an object' });
+      }
+      const HEX = /^#[0-9a-fA-F]{6}$/;
+      const c = avatarConfig as Record<string, unknown>;
+      const pickHex = (v: unknown, fallback: string): string => (typeof v === 'string' && HEX.test(v) ? v : fallback);
+      validatedAvatarConfig = {
+        bodyType: c.bodyType === 'slim' || c.bodyType === 'broad' || c.bodyType === 'regular' ? c.bodyType : 'regular',
+        skinTone: pickHex(c.skinTone, '#c8a27e'),
+        armorColor: pickHex(c.armorColor, '#4c4f69'),
+        accentColor: pickHex(c.accentColor, '#7c6ef0'),
+        hairStyle: ['short', 'swept', 'topknot', 'hood'].includes(c.hairStyle as string)
+          ? (c.hairStyle as string)
+          : 'short',
+        hairColor: pickHex(c.hairColor, '#2a2f3a'),
+        classSigil: ['sword', 'orb', 'tome', 'dagger', 'bow', 'none'].includes(c.classSigil as string)
+          ? (c.classSigil as string)
+          : 'none',
+      };
+    }
 
     let settings = await prisma.userSettings.findUnique({
       where: { userId },
@@ -604,6 +638,7 @@ app.patch('/api/settings', authenticateToken, async (req, res) => {
           notificationPreference: notificationPreference ?? 'adaptive',
           timezone,
           locale,
+          ...(validatedAvatarConfig !== undefined && { avatarConfig: JSON.stringify(validatedAvatarConfig) }),
         },
       });
     } else {
@@ -615,6 +650,7 @@ app.patch('/api/settings', authenticateToken, async (req, res) => {
           ...(notificationPreference !== undefined && { notificationPreference }),
           ...(timezone !== undefined && { timezone }),
           ...(locale !== undefined && { locale }),
+          ...(validatedAvatarConfig !== undefined && { avatarConfig: JSON.stringify(validatedAvatarConfig) }),
         },
       });
     }
@@ -1471,6 +1507,29 @@ const suggestRankForEnergy = (energy: number): { minRank: string; maxRank: strin
   return { minRank: 'B', maxRank: 'S', label: 'Peak condition — hunt big game today!' };
 };
 
+/**
+ * Streak insurance (#21/#61): compute a failure penalty, consuming a streak ward
+ * if the hunter has one. A ward shields the streak (and only the streak) from the
+ * penalty; HP loss still applies. Forgiving mode never touches streaks or wards.
+ */
+const applyFailurePenalty = (
+  stats: { hp: number; hpMax: number; streak: number; streakWards: number; exp: number },
+  penaltySeverity: string
+): { hp: number; streak: number; streakWards: number; wardUsed: boolean } => {
+  if (penaltySeverity === 'forgiving') {
+    return { hp: stats.hp, streak: stats.streak, streakWards: stats.streakWards, wardUsed: false };
+  }
+
+  const hpPenalty = penaltySeverity === 'hardcore' ? 10 : 5;
+  const newHp = Math.max(stats.hp - hpPenalty, 0);
+
+  // Ward shields the streak: consume one instead of resetting it
+  if (stats.streakWards > 0) {
+    return { hp: newHp, streak: stats.streak, streakWards: stats.streakWards - 1, wardUsed: true };
+  }
+  return { hp: newHp, streak: 0, streakWards: stats.streakWards, wardUsed: false };
+};
+
 // ========================
 // Health check
 // ========================
@@ -2095,20 +2154,22 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
     const newExpReward = baseXpByRank[newRank] ?? 10;
     const newGoldReward = baseGoldByRank[newRank] ?? 5;
 
-    const quest = await withRetry(() => prisma.quest.update({
+    let quest = await withRetry(() => prisma.quest.update({
       where: { id },
       data: {
         title: title ? title.trim() : undefined,
         rank: rank ?? undefined,
         category: category ?? undefined,
-        status: status ?? undefined,
+        // Status is intentionally excluded for COMPLETED transitions: the reward
+        // transaction below claims the completion atomically (#183 race guard).
+        status: status === 'COMPLETED' ? undefined : status,
         deadline: deadline ? new Date(deadline) : undefined,
         notes: notes ? notes.trim() : undefined,
         gateId: gateId ?? undefined,
         isBossQuest: isBossQuest ?? undefined,
         expReward: newExpReward,
         goldReward: newGoldReward,
-        completedAt: status === 'COMPLETED' ? new Date() : (completedAt ? new Date(completedAt) : undefined),
+        completedAt: status === 'COMPLETED' ? undefined : (completedAt ? new Date(completedAt) : undefined),
         updatedAt: new Date(),
       },
       include: { gate: true, subtasks: true }
@@ -2117,11 +2178,17 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
     // Invalidate quest caches for this user
     await deleteCachePattern(`quests:${userId}:*`);
 
-    emitToUser(userId, 'quest:updated', quest);
-
     // If quest was completed, award rewards server-side with transaction
     if (status === 'COMPLETED' && existingQuest.status !== 'COMPLETED') {
       await prisma.$transaction(async (tx) => {
+        // Atomic completion claim (#183): only the first request that flips the
+        // status wins the rewards; concurrent duplicate requests claim zero rows.
+        const claimed = await tx.quest.updateMany({
+          where: { id: existingQuest.id, status: { not: 'COMPLETED' } },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+        if (claimed.count === 0) return;
+
         const stats = await tx.hunterStats.findUnique({ where: { userId } });
         if (stats) {
           // Get recent quest completions for anti-grind and variety calculations
@@ -2293,22 +2360,15 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           if (stats) {
             const { level, xpToNext, progressPercent } = calculateLevelAndProgress(stats.exp);
             
-            let hpPenalty = 0;
-            let streakPenalty = false;
-
-            if (penaltySeverity === 'moderate') {
-              streakPenalty = true;
-              hpPenalty = 5;
-            } else if (penaltySeverity === 'hardcore') {
-              streakPenalty = true;
-              hpPenalty = 10;
-            }
+            // Streak ward insurance (#21/#61): a ward shields the streak from the reset
+            const penalty = applyFailurePenalty(stats, penaltySeverity);
 
             const updatedStats = await tx.hunterStats.update({
               where: { userId },
-              data: { 
-                hp: Math.max(stats.hp - hpPenalty, 0),
-                ...(streakPenalty && { streak: 0 }),
+              data: {
+                hp: penalty.hp,
+                streak: penalty.streak,
+                streakWards: penalty.streakWards,
                 level,
                 expToNext: xpToNext,
                 progressPercent: progressPercent,
@@ -2323,15 +2383,26 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
             const notif = await tx.notification.create({
               data: {
                 userId,
-                message: `Quest "${existingQuest.title}" failed. ${penaltySeverity === 'hardcore' ? 'HP -10, streak reset' : penaltySeverity === 'moderate' ? 'Streak reset' : 'No penalties'}.`,
+                message: penalty.wardUsed
+                  ? `Quest "${existingQuest.title}" failed. A Streak Ward absorbed the penalty — your ${penalty.streak}-day streak survives (${penalty.streakWards} ward${penalty.streakWards === 1 ? '' : 's'} left). HP -${penaltySeverity === 'hardcore' ? 10 : 5}.`
+                  : `Quest "${existingQuest.title}" failed. ${penaltySeverity === 'hardcore' ? 'HP -10, streak reset' : penaltySeverity === 'moderate' ? 'Streak reset' : 'No penalties'}.`,
                 type: 'PENALTY',
               },
             });
             emitToUser(userId, 'notification:new', notif);
           }
         });
+
+        // Re-fetch: the completion claim inside the transaction changed the quest row
+        // (quest existence was verified at the top of the handler, hence the assertion)
+        quest = await withRetry(() => prisma.quest.findUnique({
+          where: { id },
+          include: { gate: true, subtasks: true },
+        })) as typeof quest;
       }
     }
+
+    emitToUser(userId, 'quest:updated', quest);
 
     res.json(quest);
   } catch (error) {
@@ -2369,23 +2440,16 @@ app.delete('/api/quests/:id', authenticateToken, async (req, res) => {
             const stats = await tx.hunterStats.findUnique({ where: { userId } });
             if (stats) {
               const { level, xpToNext, progressPercent } = calculateLevelAndProgress(stats.exp);
-              
-              let hpPenalty = 0;
-              let streakPenalty = false;
 
-              if (penaltySeverity === 'moderate') {
-                streakPenalty = true;
-                hpPenalty = 5;
-              } else if (penaltySeverity === 'hardcore') {
-                streakPenalty = true;
-                hpPenalty = 10;
-              }
+              // Streak ward insurance (#21/#61): a ward shields the streak here too
+              const penalty = applyFailurePenalty(stats, penaltySeverity);
 
               await tx.hunterStats.update({
                 where: { userId },
-                data: { 
-                  hp: Math.max(stats.hp - hpPenalty, 0),
-                  ...(streakPenalty && { streak: 0 }),
+                data: {
+                  hp: penalty.hp,
+                  streak: penalty.streak,
+                  streakWards: penalty.streakWards,
                   level,
                   expToNext: xpToNext,
                   progressPercent: progressPercent,
