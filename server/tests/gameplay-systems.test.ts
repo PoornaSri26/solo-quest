@@ -6,6 +6,8 @@
  * - Category-to-stat mapping (#3)
  * - Adaptive rank suggestion (#2)
  * - Procedural flavor text (#25)
+ * - Streak ward failure insurance (#21/#61)
+ * - Race-safe completion claim / idempotent rewards (#183)
  *
  * The mirror functions below match server/src/index.ts (kept in sync manually,
  * same pattern as gdpr.test.ts).
@@ -105,6 +107,44 @@ const suggestRankForEnergy = (energy: number) => {
   if (energy === 3) return { minRank: 'D', maxRank: 'C', label: 'Steady pace — D and C-rank quests.' };
   if (energy === 4) return { minRank: 'C', maxRank: 'A', label: 'Good energy — C to A-rank quests.' };
   return { minRank: 'B', maxRank: 'S', label: 'Peak condition — hunt big game today!' };
+};
+
+const applyFailurePenalty = (
+  stats: { hp: number; hpMax: number; streak: number; streakWards: number; exp: number },
+  penaltySeverity: string
+): { hp: number; streak: number; streakWards: number; wardUsed: boolean } => {
+  if (penaltySeverity === 'forgiving') {
+    return { hp: stats.hp, streak: stats.streak, streakWards: stats.streakWards, wardUsed: false };
+  }
+
+  const hpPenalty = penaltySeverity === 'hardcore' ? 10 : 5;
+  const newHp = Math.max(stats.hp - hpPenalty, 0);
+
+  if (stats.streakWards > 0) {
+    return { hp: newHp, streak: stats.streak, streakWards: stats.streakWards - 1, wardUsed: true };
+  }
+  return { hp: newHp, streak: 0, streakWards: stats.streakWards, wardUsed: false };
+};
+
+/**
+ * Mirrors the request flow for completion claims (#183): each concurrent request
+ * runs a conditional claim update; only the first (when status is not yet
+ * COMPLETED) wins the rewards.
+ */
+const simulateConcurrentClaims = (
+  initialStatus: string,
+  requestCount: number
+): { successfulClaims: number } => {
+  let status = initialStatus;
+  let successfulClaims = 0;
+  for (let i = 0; i < requestCount; i++) {
+    // Conditional claim: only flips status if not already COMPLETED
+    if (status !== 'COMPLETED') {
+      status = 'COMPLETED';
+      successfulClaims++;
+    }
+  }
+  return { successfulClaims };
 };
 
 // ---- Tests ----
@@ -262,5 +302,67 @@ describe('Flavor Text (#25)', () => {
   it('falls back to Wildcard openers for unknown categories', () => {
     const text = generateFlavorText('UnknownCategory', 'E', 'Odd task');
     expect(text).toContain('Rank E');
+  });
+});
+
+describe('Streak Ward Failure Insurance (#21/#61)', () => {
+  const baseStats = { hp: 100, hpMax: 100, streak: 12, streakWards: 1, exp: 500 };
+
+  it('forgiving mode never penalizes or consumes wards', () => {
+    const result = applyFailurePenalty(baseStats, 'forgiving');
+    expect(result).toEqual({ hp: 100, streak: 12, streakWards: 1, wardUsed: false });
+  });
+
+  it('a ward shields the streak from reset (moderate)', () => {
+    const result = applyFailurePenalty(baseStats, 'moderate');
+    expect(result.streak).toBe(12);
+    expect(result.streakWards).toBe(0);
+    expect(result.wardUsed).toBe(true);
+    expect(result.hp).toBe(95); // HP still applies
+  });
+
+  it('a ward shields the streak from reset (hardcore) but HP still drops', () => {
+    const result = applyFailurePenalty(baseStats, 'hardcore');
+    expect(result.streak).toBe(12);
+    expect(result.streakWards).toBe(0);
+    expect(result.wardUsed).toBe(true);
+    expect(result.hp).toBe(90);
+  });
+
+  it('resets the streak when no ward is available (moderate)', () => {
+    const result = applyFailurePenalty({ ...baseStats, streakWards: 0 }, 'moderate');
+    expect(result.streak).toBe(0);
+    expect(result.wardUsed).toBe(false);
+    expect(result.hp).toBe(95);
+  });
+
+  it('consumes exactly one ward when several are held', () => {
+    const result = applyFailurePenalty({ ...baseStats, streakWards: 3 }, 'moderate');
+    expect(result.streakWards).toBe(2);
+    expect(result.streak).toBe(12);
+    expect(result.wardUsed).toBe(true);
+  });
+
+  it('never lets HP go below zero', () => {
+    const result = applyFailurePenalty({ ...baseStats, hp: 3, streakWards: 0 }, 'hardcore');
+    expect(result.hp).toBe(0);
+  });
+});
+
+describe('Race-safe Completion Claim (#183)', () => {
+  it('rewards only the first concurrent completion request', () => {
+    const result = simulateConcurrentClaims('ACTIVE', 5);
+    expect(result.successfulClaims).toBe(1);
+  });
+
+  it('never rewards an already-completed quest (repeat request)', () => {
+    const result = simulateConcurrentClaims('COMPLETED', 3);
+    expect(result.successfulClaims).toBe(0);
+  });
+
+  it('rewards exactly once regardless of request count', () => {
+    for (const n of [2, 10, 50]) {
+      expect(simulateConcurrentClaims('SHADOW', n).successfulClaims).toBe(1);
+    }
   });
 });
