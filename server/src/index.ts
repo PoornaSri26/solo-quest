@@ -5040,6 +5040,97 @@ const startServer = async () => {
       }
     });
 
+    /**
+     * @swagger
+     * /api/raids/{id}/contribute:
+     *   post:
+     *     summary: Contribute XP to a raid
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/raids/:id/contribute', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { id: raidId } = req.params;
+        const { exp } = req.body;
+
+        if (!exp || exp <= 0) {
+          return res.status(400).json({ error: 'Valid XP amount is required' });
+        }
+
+        const raid = await withRetry(() =>
+          prisma.raid.findUnique({
+            where: { id: raidId },
+            include: { participants: true },
+          })
+        );
+
+        if (!raid) {
+          return res.status(404).json({ error: 'Raid not found' });
+        }
+
+        if (raid.status !== 'active') {
+          return res.status(400).json({ error: 'Raid is not active' });
+        }
+
+        const participant = raid.participants.find(p => p.userId === userId);
+        if (!participant) {
+          return res.status(403).json({ error: 'You must join the raid first' });
+        }
+
+        // Update participant contribution
+        await withRetry(() =>
+          prisma.raidParticipant.update({
+            where: { id: participant.id },
+            data: {
+              expContributed: { increment: BigInt(exp) },
+              lastActiveAt: new Date(),
+            },
+          })
+        );
+
+        // Update raid progress
+        const updatedRaid = await withRetry(() =>
+          prisma.raid.update({
+            where: { id: raidId },
+            data: {
+              progressExp: { increment: BigInt(exp) },
+            },
+          })
+        );
+
+        // Check if raid is completed
+        if (updatedRaid.progressExp >= updatedRaid.targetExp) {
+          await withRetry(() =>
+            prisma.raid.update({
+              where: { id: raidId },
+              data: {
+                status: 'COMPLETED',
+                endDate: new Date(),
+              },
+            })
+          );
+
+          // Award guild XP
+          await withRetry(() =>
+            prisma.guild.update({
+              where: { id: raid.guildId },
+              data: {
+                totalExp: { increment: updatedRaid.targetExp },
+                level: { increment: 1 },
+              },
+            })
+          );
+        }
+
+        res.json({ success: true, message: 'XP contributed successfully' });
+      } catch (error) {
+        logger.error('Contribute to raid error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
     // ========================
     // White-label and Enterprise Management
     // ========================
