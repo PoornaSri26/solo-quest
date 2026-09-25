@@ -12,7 +12,7 @@ import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
 import { SkipLink } from './components/SkipLink';
 import { getAvatarUrl } from './lib/avatars';
-import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X, Trophy, Gem, Target, Brain, Users, Flag } from 'lucide-react';
+import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X, Trophy, Gem, Target, Brain, Users, Flag, Crown } from 'lucide-react';
 
 // Lazy load pages for code splitting
 const QuestLogPage = lazy(() => import('./pages/QuestLogPage'));
@@ -26,6 +26,7 @@ const MementosPage = lazy(() => import('./pages/MementosPage'));
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
 const SocialPage = lazy(() => import('./pages/SocialPage'));
 const ProgressionPage = lazy(() => import('./pages/ProgressionPage'));
+const SubscriptionPage = lazy(() => import('./pages/SubscriptionPage'));
 
 // Loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -257,6 +258,16 @@ const AppLayout: React.FC = () => {
             <Flag className="w-4 h-4" aria-hidden="true" />
             Progression
           </NavLink>
+          <NavLink
+            to="/subscription"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-text-primary border-l-2 border-yellow-500' : 'text-text-secondary hover:bg-raised hover:text-text-primary'}
+            `}
+          >
+            <Crown className="w-4 h-4 text-yellow-500" aria-hidden="true" />
+            Subscription
+          </NavLink>
         </nav>
 
         {/* Gold + Logout */}
@@ -333,6 +344,11 @@ const AppLayout: React.FC = () => {
               <ProgressionPage />
             </Suspense>
           } />
+          <Route path="/subscription" element={
+            <Suspense fallback={<PageLoader />}>
+              <SubscriptionPage />
+            </Suspense>
+          } />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -364,6 +380,8 @@ const App: React.FC = () => {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/welcome" element={<LandingPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
+        <Route path="/subscription/success" element={<LandingPage />} />
+        <Route path="/subscription/canceled" element={<LandingPage />} />
         
         {/* Protected routes */}
         <Route
@@ -456,6 +474,14 @@ const App: React.FC = () => {
         />
         <Route
           path="/progression"
+          element={
+            <AuthGuard>
+              <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/subscription"
           element={
             <AuthGuard>
               <AppLayout />
