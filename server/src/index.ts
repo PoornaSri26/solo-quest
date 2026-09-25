@@ -29,6 +29,7 @@ import {
 } from './middleware';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger';
+import { setupAnalyticsRoutes } from './analytics';
 import {
   createCheckoutSession,
   handleWebhook,
@@ -230,6 +231,9 @@ app.get('/api-docs.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerSpec);
 });
+
+// Analytics routes
+setupAnalyticsRoutes(app);
 
 // Auth middleware
 const authenticateToken = (req: any, res: any, next: any) => {

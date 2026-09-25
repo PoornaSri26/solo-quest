@@ -79,6 +79,9 @@ model User {
   organization   Organization? @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
   questPacks    QuestPack[] @relation("CreatorQuestPacks")
   questPackPurchases QuestPackPurchase[] @relation("UserQuestPackPurchases")
+  analyticsEvents AnalyticsEvent[] @relation("UserAnalyticsEvents")
+  onboardingProgress OnboardingProgress? @relation("UserOnboardingProgress")
+  retentionMetrics RetentionMetrics? @relation("UserRetentionMetrics")
   
   @@index([organizationId]) // Fast organization member lookups
   @@index([createdAt]) // Chronological queries
@@ -795,6 +798,63 @@ model UserSettings {
   
   @@index([userId]) // User's settings
   @@map("user_settings")
+}
+
+// ============================================================
+// ANALYTICS MODELS
+// ============================================================
+
+/// Analytics event tracking - records user behavior and events
+/// Tracks user actions for analytics and retention analysis
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  eventType String // Event type (page_view, quest_complete, level_up, etc.)
+  eventData String? // JSON string with additional event data
+  sessionId String? // Session identifier for grouping events
+  timestamp DateTime @default(now()) // Event timestamp
+  user      User     @relation("UserAnalyticsEvents", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, timestamp]) // User events over time
+  @@index([eventType, timestamp]) // Events by type over time
+  @@index([sessionId]) // Session-based queries
+  @@map("analytics_events")
+}
+
+/// Onboarding funnel tracking - tracks user onboarding progress
+/// Records steps completed during user onboarding
+model OnboardingProgress {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("fk_user_id")
+  currentStep String // Current onboarding step
+  completedSteps String // JSON array of completed steps
+  startedAt DateTime @default(now()) // When onboarding started
+  completedAt DateTime? // When onboarding was completed
+  user      User     @relation("UserOnboardingProgress", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([currentStep]) // Users by current step
+  @@index([completedAt]) // Completed onboarding
+  @@map("onboarding_progress")
+}
+
+/// Retention metrics - tracks user retention and engagement
+/// Records daily, weekly, monthly retention data
+model RetentionMetrics {
+  id            String   @id @default(uuid())
+  userId        String   @map("fk_user_id")
+  day1Active    Boolean  @default(false) // Active on day 1
+  day7Active    Boolean  @default(false) // Active on day 7
+  day30Active   Boolean  @default(false) // Active on day 30
+  lastActiveAt  DateTime @default(now()) // Last activity timestamp
+  totalSessions Int      @default(0) // Total number of sessions
+  avgSessionDuration Float // Average session duration in minutes
+  user          User     @relation("UserRetentionMetrics", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId]) // User retention lookup
+  @@index([day1Active]) // Day 1 retention
+  @@index([day7Active]) // Day 7 retention
+  @@index([day30Active]) // Day 30 retention
+  @@map("retention_metrics")
 }
 
 // ============================================================
