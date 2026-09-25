@@ -398,9 +398,89 @@ app.post('/api/subscription/checkout', authenticateToken, async (req, res) => {
     }
 
     const session = await createCheckoutSession(userId, plan, billingCycle);
-    res.json({ url: session.url, sessionId: session.id });
+    res.json({ checkoutUrl: session.url, sessionId: session.id });
   } catch (error) {
     logger.error('Create checkout session error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription:
+ *   get:
+ *     summary: Get current subscription status
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current subscription status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 plan:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                 endDate:
+ *                   type: string
+ */
+app.get('/api/subscription', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const subscription = await getUserSubscription(userId);
+    res.json(subscription);
+  } catch (error) {
+    logger.error('Get subscription error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/success:
+ *   get:
+ *     summary: Handle successful subscription checkout
+ *     tags: [Subscription]
+ *     parameters:
+ *       - in: query
+ *         name: session_id
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Subscription success page
+ */
+app.get('/api/subscription/success', async (req, res) => {
+  try {
+    const { session_id } = req.query;
+    logger.info(`Subscription success for session: ${session_id}`);
+    res.json({ success: true, message: 'Subscription successful' });
+  } catch (error) {
+    logger.error('Subscription success error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/subscription/canceled:
+ *   get:
+ *     summary: Handle canceled subscription checkout
+ *     tags: [Subscription]
+ *     responses:
+ *       200:
+ *         description: Subscription canceled page
+ */
+app.get('/api/subscription/canceled', async (req, res) => {
+  try {
+    logger.info('Subscription checkout canceled');
+    res.json({ success: false, message: 'Subscription canceled' });
+  } catch (error) {
+    logger.error('Subscription canceled error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
