@@ -235,6 +235,43 @@ app.get('/api-docs.json', (req, res) => {
 // Analytics routes
 setupAnalyticsRoutes(app);
 
+// Push notification token registration
+app.post('/api/push/register', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { pushToken, platform } = req.body;
+
+    if (!pushToken || !platform) {
+      return res.status(400).json({ error: 'pushToken and platform are required' });
+    }
+
+    // Store or update push token
+    await withRetry(() =>
+      prisma.pushToken.upsert({
+        where: { token: pushToken },
+        update: {
+          userId,
+          platform,
+          isActive: true,
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          token: pushToken,
+          platform,
+          isActive: true,
+        },
+      })
+    );
+
+    logger.info(`Push token registered for user ${userId} on ${platform}`);
+    res.json({ success: true, message: 'Push token registered successfully' });
+  } catch (error) {
+    logger.error('Push token registration error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Auth middleware
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];

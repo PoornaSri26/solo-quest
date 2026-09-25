@@ -21,6 +21,17 @@ const config: CapacitorConfig = {
       iosSpinnerStyle: 'large',
       spinnerColor: '#a855f7',
     },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
+    LocalNotifications: {
+      smallIcon: 'ic_stat_icon_config_sample',
+      iconColor: '#a855f7',
+      sound: 'beep.wav',
+    },
+    App: {
+      launchUrl: 'https://soloquest.app',
+    },
   },
 };
 

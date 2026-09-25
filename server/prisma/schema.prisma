@@ -82,6 +82,7 @@ model User {
   analyticsEvents AnalyticsEvent[] @relation("UserAnalyticsEvents")
   onboardingProgress OnboardingProgress? @relation("UserOnboardingProgress")
   retentionMetrics RetentionMetrics? @relation("UserRetentionMetrics")
+  pushTokens PushToken[] @relation("UserPushTokens")
   
   @@index([organizationId]) // Fast organization member lookups
   @@index([createdAt]) // Chronological queries
@@ -798,6 +799,28 @@ model UserSettings {
   
   @@index([userId]) // User's settings
   @@map("user_settings")
+}
+
+// ============================================================
+// PUSH NOTIFICATION MODELS
+// ============================================================
+
+/// Push notification tokens - stores device tokens for push notifications
+/// Maps users to their device push tokens across platforms
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("fk_user_id")
+  token     String   @unique // Push notification token from FCM/APNs
+  platform  String // Platform (ios, android, web)
+  isActive  Boolean  @default(true) // Whether token is currently active
+  createdAt DateTime @default(now()) // Token registration timestamp
+  updatedAt DateTime @updatedAt // Last update timestamp
+  user      User     @relation("UserPushTokens", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId]) // User's push tokens
+  @@index([platform]) // Tokens by platform
+  @@index([isActive]) // Active tokens
+  @@map("push_tokens")
 }
 
 // ============================================================
