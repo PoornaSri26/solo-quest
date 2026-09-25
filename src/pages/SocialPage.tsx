@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Share2, Trophy, Award, TrendingUp } from 'lucide-react';
+import { Users, Share2, Trophy, Award, TrendingUp, Building2, Sword, Plus } from 'lucide-react';
 import { SocialStats } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import GuildCard from '../components/GuildCard';
+import RaidCard from '../components/RaidCard';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -13,7 +15,17 @@ export default function SocialPage() {
   const { token } = useStore();
   const [socialStats, setSocialStats] = useState<SocialStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [guilds, setGuilds] = useState<any[]>([]);
+  const [raids, setRaids] = useState<any[]>([]);
+  const [userGuild, setUserGuild] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showCreateGuild, setShowCreateGuild] = useState(false);
+  const [showCreateRaid, setShowCreateRaid] = useState(false);
+  const [newGuildName, setNewGuildName] = useState('');
+  const [newGuildDesc, setNewGuildDesc] = useState('');
+  const [newRaidName, setNewRaidName] = useState('');
+  const [newRaidDesc, setNewRaidDesc] = useState('');
+  const [newRaidTarget, setNewRaidTarget] = useState('');
 
   const pageRef = useRef<HTMLDivElement>(null);
   const sectionsRef = useRef<HTMLDivElement>(null);
@@ -26,11 +38,14 @@ export default function SocialPage() {
 
     const fetchData = async () => {
       try {
-        const [socialRes, leaderRes] = await Promise.all([
+        const [socialRes, leaderRes, guildsRes] = await Promise.all([
           fetch('http://localhost:5000/api/social/stats', {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch('http://localhost:5000/api/leaderboard', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch('http://localhost:5000/api/guilds', {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
@@ -38,11 +53,27 @@ export default function SocialPage() {
         if (socialRes.ok) {
           const socialData = await socialRes.json();
           setSocialStats(socialData);
+          if (socialData.guildId) {
+            setUserGuild(socialData.guildId);
+            // Fetch raids for user's guild
+            const raidsRes = await fetch(`http://localhost:5000/api/guilds/${socialData.guildId}/raids`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (raidsRes.ok) {
+              const raidsData = await raidsRes.json();
+              setRaids(raidsData);
+            }
+          }
         }
 
         if (leaderRes.ok) {
           const leaderData = await leaderRes.json();
           setLeaderboard(leaderData);
+        }
+
+        if (guildsRes.ok) {
+          const guildsData = await guildsRes.json();
+          setGuilds(guildsData);
         }
       } catch (error) {
         console.error('Failed to fetch social data:', error);
@@ -118,6 +149,127 @@ export default function SocialPage() {
     }
   };
 
+  const handleCreateGuild = async () => {
+    if (!newGuildName.trim()) {
+      alert('Guild name is required');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:5000/api/guilds', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newGuildName,
+          description: newGuildDesc,
+        }),
+      });
+
+      if (res.ok) {
+        const guild = await res.json();
+        alert('Guild created successfully!');
+        setNewGuildName('');
+        setNewGuildDesc('');
+        setShowCreateGuild(false);
+        // Refresh data
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(error.error || 'Failed to create guild');
+      }
+    } catch (error) {
+      console.error('Failed to create guild:', error);
+      alert('Failed to create guild');
+    }
+  };
+
+  const handleJoinGuild = async (guildId: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/guilds/${guildId}/join`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        alert('Joined guild successfully!');
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(error.error || 'Failed to join guild');
+      }
+    } catch (error) {
+      console.error('Failed to join guild:', error);
+      alert('Failed to join guild');
+    }
+  };
+
+  const handleCreateRaid = async () => {
+    if (!newRaidName.trim() || !newRaidTarget) {
+      alert('Raid name and target XP are required');
+      return;
+    }
+
+    if (!userGuild) {
+      alert('You must be in a guild to create a raid');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:5000/api/raids', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          guildId: userGuild,
+          name: newRaidName,
+          description: newRaidDesc,
+          targetExp: parseInt(newRaidTarget),
+        }),
+      });
+
+      if (res.ok) {
+        const raid = await res.json();
+        alert('Raid created successfully!');
+        setNewRaidName('');
+        setNewRaidDesc('');
+        setNewRaidTarget('');
+        setShowCreateRaid(false);
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(error.error || 'Failed to create raid');
+      }
+    } catch (error) {
+      console.error('Failed to create raid:', error);
+      alert('Failed to create raid');
+    }
+  };
+
+  const handleJoinRaid = async (raidId: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/raids/${raidId}/join`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        alert('Joined raid successfully!');
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(error.error || 'Failed to join raid');
+      }
+    } catch (error) {
+      console.error('Failed to join raid:', error);
+      alert('Failed to join raid');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white flex items-center justify-center">
@@ -141,6 +293,178 @@ export default function SocialPage() {
             Social Features
           </h1>
         </div>
+
+        {/* Guilds Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Building2 className="w-8 h-8 text-purple-400" />
+              <h2 className="text-2xl font-bold text-white">Guilds</h2>
+            </div>
+            {!userGuild && (
+              <button
+                onClick={() => setShowCreateGuild(!showCreateGuild)}
+                className="bg-gradient-to-r from-purple-600 to-purple-400 hover:from-purple-500 hover:to-purple-300 px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Create Guild
+              </button>
+            )}
+          </div>
+
+          {showCreateGuild && (
+            <div className="bg-slate-800/80 backdrop-blur-sm rounded-xl p-6 border border-purple-500/50 mb-6">
+              <h3 className="text-xl font-bold text-white mb-4">Create New Guild</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Guild Name</label>
+                  <input
+                    type="text"
+                    value={newGuildName}
+                    onChange={(e) => setNewGuildName(e.target.value)}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
+                    placeholder="Enter guild name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Description</label>
+                  <textarea
+                    value={newGuildDesc}
+                    onChange={(e) => setNewGuildDesc(e.target.value)}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
+                    placeholder="Enter guild description"
+                    rows={3}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleCreateGuild}
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-purple-400 hover:from-purple-500 hover:to-purple-300 px-4 py-2 rounded-lg font-semibold transition-all duration-300"
+                  >
+                    Create Guild
+                  </button>
+                  <button
+                    onClick={() => setShowCreateGuild(false)}
+                    className="flex-1 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg font-semibold transition-all duration-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {userGuild ? (
+            <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-6 mb-6">
+              <div className="flex items-center gap-3">
+                <Building2 className="w-6 h-6 text-green-400" />
+                <div>
+                  <h3 className="text-xl font-bold text-green-400">You are in a guild</h3>
+                  <p className="text-gray-300">Guild ID: {userGuild}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-6">
+              {guilds.map((guild) => (
+                <GuildCard
+                  key={guild.id}
+                  guild={guild}
+                  onJoin={handleJoinGuild}
+                  isMember={false}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Raids Section */}
+        {userGuild && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <Sword className="w-8 h-8 text-red-400" />
+                <h2 className="text-2xl font-bold text-white">Guild Raids</h2>
+              </div>
+              <button
+                onClick={() => setShowCreateRaid(!showCreateRaid)}
+                className="bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-500 hover:to-orange-400 px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Create Raid
+              </button>
+            </div>
+
+            {showCreateRaid && (
+              <div className="bg-slate-800/80 backdrop-blur-sm rounded-xl p-6 border border-red-500/50 mb-6">
+                <h3 className="text-xl font-bold text-white mb-4">Create New Raid</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Raid Name</label>
+                    <input
+                      type="text"
+                      value={newRaidName}
+                      onChange={(e) => setNewRaidName(e.target.value)}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-red-500"
+                      placeholder="Enter raid name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Description</label>
+                    <textarea
+                      value={newRaidDesc}
+                      onChange={(e) => setNewRaidDesc(e.target.value)}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-red-500"
+                      placeholder="Enter raid description"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Target XP</label>
+                    <input
+                      type="number"
+                      value={newRaidTarget}
+                      onChange={(e) => setNewRaidTarget(e.target.value)}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-red-500"
+                      placeholder="Enter target XP"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCreateRaid}
+                      className="flex-1 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-500 hover:to-orange-400 px-4 py-2 rounded-lg font-semibold transition-all duration-300"
+                    >
+                      Create Raid
+                    </button>
+                    <button
+                      onClick={() => setShowCreateRaid(false)}
+                      className="flex-1 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg font-semibold transition-all duration-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {raids.length > 0 ? (
+                raids.map((raid) => (
+                  <RaidCard
+                    key={raid.id}
+                    raid={raid}
+                    onJoin={handleJoinRaid}
+                    isParticipant={false}
+                  />
+                ))
+              ) : (
+                <div className="col-span-full text-center text-gray-400 py-8 bg-slate-700/50 rounded-lg">
+                  No active raids. Create one to get started!
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div ref={sectionsRef} className="grid gap-6 lg:grid-cols-2">
           {/* Social Stats */}
@@ -275,6 +599,33 @@ export default function SocialPage() {
               </div>
             )}
           </div>
+
+          {/* Guild Activity */}
+          {userGuild && (
+            <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-xl p-6 border border-purple-500/50 shadow-lg shadow-purple-500/20">
+              <div className="flex items-center gap-3 mb-6">
+                <Building2 className="w-6 h-6 text-purple-400" />
+                <h2 className="text-2xl font-bold text-white">Guild Activity</h2>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-slate-700/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-300">Active Raids</span>
+                    <span className="text-2xl font-display text-purple-400">{raids.filter(r => r.status === 'ACTIVE').length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-300">Completed Raids</span>
+                    <span className="text-2xl font-display text-green-400">{raids.filter(r => r.status === 'COMPLETED').length}</span>
+                  </div>
+                </div>
+
+                <div className="text-center text-gray-400 text-sm bg-slate-700/50 rounded-lg p-3">
+                  Participate in raids to earn guild XP and level up your guild!
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
