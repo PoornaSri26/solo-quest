@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { randomUUID } from 'crypto';
 import logger from './logger';
 import { env } from './env';
 
@@ -10,18 +11,23 @@ declare module 'express-serve-static-core' {
 }
 
 /**
- * Request ID middleware for traceability
- * Generates a unique ID for each request and adds it to the response headers
+ * Request ID middleware for traceability.
+ * Honors an incoming X-Request-ID (e.g. from a load balancer) so traces
+ * can be correlated end-to-end; otherwise generates a UUID.
  */
 export const requestIdMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  req.id = Date.now().toString(36) + Math.random().toString(36).substring(2);
+  const incoming = req.headers['x-request-id'];
+  req.id =
+    typeof incoming === 'string' && incoming.length >= 8 && incoming.length <= 128
+      ? incoming
+      : randomUUID();
   res.setHeader('X-Request-ID', req.id);
   next();
 };
 
 /**
- * Request logging middleware
- * Logs incoming requests and their response times
+ * Request logging middleware.
+ * Logs incoming requests and their response times.
  */
 export const requestLoggingMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
@@ -30,7 +36,7 @@ export const requestLoggingMiddleware = (req: Request, res: Response, next: Next
     ip: req.ip,
     userAgent: req.headers['user-agent'],
   });
-  
+
   res.on('finish', () => {
     const duration = Date.now() - start;
     logger.info(`${req.method} ${req.path} - ${res.statusCode}`, {
@@ -38,28 +44,13 @@ export const requestLoggingMiddleware = (req: Request, res: Response, next: Next
       duration: `${duration}ms`,
     });
   });
-  
+
   next();
 };
 
 /**
- * Body validation middleware
- * Sanitizes request bodies to prevent prototype pollution
- */
-export const bodyValidationMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
-    if (req.body && typeof req.body === 'object') {
-      // Remove any prototype pollution attempts
-      const sanitizedBody = JSON.parse(JSON.stringify(req.body));
-      req.body = sanitizedBody;
-    }
-  }
-  next();
-};
-
-/**
- * Request timing middleware for performance monitoring
- * Logs slow requests (over 100ms)
+ * Request timing middleware for performance monitoring.
+ * Logs slow requests (over 100ms).
  */
 export const requestTimingMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
@@ -75,8 +66,12 @@ export const requestTimingMiddleware = (req: Request, res: Response, next: NextF
 };
 
 /**
- * Request timeout handling
- * Times out requests after 30 seconds
+ * Request timeout handling.
+ * Sends a 504 if the response hasn't started within 30 seconds. The timer
+ * is cleared on BOTH 'finish' and 'close' so aborted requests don't leak
+ * dangling timers. (Note: this bounds response time; it cannot abort
+ * in-flight async work — genuine cancellation needs AbortController at
+ * the query layer.)
  */
 export const requestTimeoutMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const timeout = setTimeout(() => {
@@ -88,38 +83,34 @@ export const requestTimeoutMiddleware = (req: Request, res: Response, next: Next
     }
   }, 30000); // 30 second timeout
 
-  res.on('finish', () => clearTimeout(timeout));
+  const clear = () => clearTimeout(timeout);
+  res.on('finish', clear);
+  res.on('close', clear);
   next();
 };
 
 /**
- * HTTP caching headers for static-like data
- * Adds appropriate cache headers based on the endpoint
+ * HTTP caching headers for static-like data.
+ * GET/HEAD only: cache directives on mutating responses (e.g. the
+ * shop-purchase POST) would be wrong and, for shared caches, unsafe.
  */
 export const cachingMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  if (req.path.startsWith('/api/shop')) {
-    res.setHeader('Cache-Control', 'public, max-age=600'); // 10 minutes
-  } else if (req.path.startsWith('/api/hunter/me') || req.path.startsWith('/api/gates')) {
-    res.setHeader('Cache-Control', 'private, max-age=120'); // 2 minutes
-  } else if (req.path.startsWith('/api/quests')) {
-    res.setHeader('Cache-Control', 'private, max-age=60'); // 1 minute
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    if (req.path.startsWith('/api/shop')) {
+      res.setHeader('Cache-Control', 'public, max-age=600'); // 10 minutes
+    } else if (req.path.startsWith('/api/hunter/me') || req.path.startsWith('/api/gates')) {
+      res.setHeader('Cache-Control', 'private, max-age=120'); // 2 minutes
+    } else if (req.path.startsWith('/api/quests')) {
+      res.setHeader('Cache-Control', 'private, max-age=60'); // 1 minute
+    }
   }
   next();
 };
 
 /**
- * HTTP keep-alive middleware
- * Enables connection reuse for better performance
- */
-export const keepAliveMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Keep-Alive', 'timeout=5, max=1000');
-  next();
-};
-
-/**
- * Global error handling middleware
- * Catches and logs all errors, sends appropriate responses
+ * Global error handling middleware.
+ * Catches and logs all errors, sends appropriate responses.
+ * Must be registered LAST, after notFoundMiddleware.
  */
 export const errorHandlerMiddleware = (err: any, req: Request, res: Response, next: NextFunction) => {
   logger.error('Unhandled error:', {
@@ -132,7 +123,12 @@ export const errorHandlerMiddleware = (err: any, req: Request, res: Response, ne
 
   // Don't leak error details in production
   const isDevelopment = env.NODE_ENV === 'development';
-  
+
+  if (res.headersSent) {
+    // Headers already gone out — delegate to Express's default handler
+    return next(err);
+  }
+
   res.status(err.status || 500).json({
     error: isDevelopment ? err.message : 'Internal server error',
     ...(isDevelopment && { stack: err.stack }),
@@ -141,8 +137,9 @@ export const errorHandlerMiddleware = (err: any, req: Request, res: Response, ne
 };
 
 /**
- * 404 handler middleware
- * Handles requests to non-existent routes
+ * 404 handler middleware.
+ * Handles requests to non-existent routes.
+ * Must be registered after ALL routes but BEFORE errorHandlerMiddleware.
  */
 export const notFoundMiddleware = (req: Request, res: Response) => {
   logger.warn('404 Not Found', {
@@ -154,25 +151,8 @@ export const notFoundMiddleware = (req: Request, res: Response) => {
 };
 
 /**
- * Security headers middleware
- * Adds additional security headers beyond helmet
- */
-export const securityHeadersMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  // Remove X-Powered-By header
-  res.removeHeader('X-Powered-By');
-  
-  // Add additional security headers
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  
-  next();
-};
-
-/**
- * Health check middleware
- * Simple health check endpoint
+ * Health check middleware.
+ * Simple health check endpoint.
  */
 export const healthCheckMiddleware = (req: Request, res: Response) => {
   res.status(200).json({

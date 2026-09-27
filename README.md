@@ -2,7 +2,7 @@
 
 **Transform your productivity into an epic RPG adventure**
 
-Solo Quest is a gamified productivity application that turns your daily tasks into quests, your goals into raids, and your personal growth into character progression. Inspired by the hit webtoon "Solo Leveling," this app brings the thrill of RPG progression to your real-life achievements.
+Solo Quest is a gamified productivity application that turns your daily tasks into quests, your goals into raids, and your personal growth into character progression. Inspired by the concept of gamified self-improvement, this app brings the thrill of RPG progression to your real-life achievements.
 
 [![CI](https://github.com/PoornaSri26/solo-quest/actions/workflows/ci.yml/badge.svg)](https://github.com/PoornaSri26/solo-quest/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,7 +11,7 @@ Solo Quest is a gamified productivity application that turns your daily tasks in
 
 ## 📖 Documentation
 
-| Doc | Purpose |
+|| Doc | Purpose |
 |---|---|
 | [Contributing](./CONTRIBUTING.md) | How to set up, code style, PR process |
 | [Code of Conduct](./CODE_OF_CONDUCT.md) | Community standards |
@@ -377,8 +377,9 @@ For support, feature requests, or bug reports:
 - [x] Configurable failure penalties
 - [x] Simple Mode onboarding
 - [x] Monetization infrastructure
-- [ ] Social features
-- [ ] Advanced analytics
+- [x] Social features
+- [x] Advanced analytics
+- [ ] Additional content and themes
 
 ### 🗺️ Phase 4: Expansion
 - [ ] Multiplayer raids
@@ -395,9 +396,9 @@ For support, feature requests, or bug reports:
 
 ## 🙏 Acknowledgments
 
-- Inspired by "Solo Leveling" webtoon
-- Built with React, Express, Prisma, Redis
-- UI design inspired by cyberpunk aesthetics
+- Built with modern web technologies: React, Express, Prisma, Redis
+- UI design inspired by productivity gaming concepts
+- Community-driven development approach
 
 ## 📈 Performance Metrics
 

@@ -1,6 +1,7 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
+import { ShieldCheck } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import AuthPage from './pages/AuthPage';
 import LandingPage from './pages/LandingPage';
@@ -27,6 +28,7 @@ const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
 const SocialPage = lazy(() => import('./pages/SocialPage'));
 const ProgressionPage = lazy(() => import('./pages/ProgressionPage'));
 const SubscriptionPage = lazy(() => import('./pages/SubscriptionPage'));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 
 // Loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -51,6 +53,30 @@ const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <Navigate to="/" replace />;
   }
   
+  return <>{children}</>;
+};
+
+// Guard: only superadmins may pass; others are redirected to the dashboard
+const SuperadminGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const hunter = useStore((s) => s.hunter);
+  const fetchHunter = useStore((s) => s.fetchHunter);
+
+  useEffect(() => {
+    if (!hunter) fetchHunter();
+  }, [hunter, fetchHunter]);
+
+  if (!hunter) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-void">
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-gold-primary border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (hunter.role !== 'SUPERADMIN') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return <>{children}</>;
 };
 
@@ -268,6 +294,18 @@ const AppLayout: React.FC = () => {
             <Crown className="w-4 h-4 text-yellow-500" aria-hidden="true" />
             Subscription
           </NavLink>
+          {hunter?.role === 'SUPERADMIN' && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => `
+                flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+                ${isActive ? 'bg-raised text-gold-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-gold-primary'}
+              `}
+            >
+              <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+              Admin Panel
+            </NavLink>
+          )}
         </nav>
 
         {/* Gold + Logout */}
@@ -485,6 +523,16 @@ const App: React.FC = () => {
           element={
             <AuthGuard>
               <AppLayout />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <AuthGuard>
+              <SuperadminGuard>
+                <AppLayout />
+              </SuperadminGuard>
             </AuthGuard>
           }
         />

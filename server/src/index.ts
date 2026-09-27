@@ -10,21 +10,18 @@ import compression from 'compression';
 import helmet from 'helmet';
 import Stripe from 'stripe';
 import logger from './logger';
-import { env } from './env';
-import { initRedisClient, closeRedisClient, getRateLimiter, initRateLimiters } from './rateLimiter';
+import { env, allowedOrigins } from './env';
+import { initRedisClient, closeRedisClient, getRateLimiter, initRateLimiters, RATE_LIMIT_CONFIG, type RateLimiterType } from './rateLimiter';
 import { initCacheClient, closeCacheClient, getFromCache, setCache, deleteFromCache, deleteCachePattern, invalidateUserCache, getCacheStats } from './cache';
 import { csrfProtection } from './csrf';
 import {
   requestIdMiddleware,
   requestLoggingMiddleware,
-  bodyValidationMiddleware,
   requestTimingMiddleware,
   requestTimeoutMiddleware,
   cachingMiddleware,
-  keepAliveMiddleware,
   errorHandlerMiddleware,
   notFoundMiddleware,
-  securityHeadersMiddleware,
   healthCheckMiddleware,
 } from './middleware';
 import swaggerUi from 'swagger-ui-express';
@@ -43,6 +40,25 @@ import {
   getUserEntitlements,
   checkUserLimits,
 } from './entitlements';
+import {
+  signToken,
+  revokeTokenJti,
+  revokeAllUserTokens,
+  isTokenRevoked,
+  recordLedgerEntry,
+  recordEconomyChange,
+  getIdempotentResponse,
+  saveIdempotentResponse,
+  setGauge,
+  renderMetrics,
+  incrementCounter,
+  BASE_XP_BY_RANK,
+  BASE_GOLD_BY_RANK,
+  loadRewardTable,
+  getRewardTableSource,
+} from './economy';
+import { runReconciliation } from './reconciliation';
+import { initJobs, closeJobs, queueImmediateReconcile } from './jobs';
 
 dotenv.config();
 
@@ -53,6 +69,11 @@ const stripe = new Stripe(env.STRIPE_SECRET_KEY || '', {
 const app = express();
 const httpServer = createServer(app);
 const port = parseInt(env.PORT, 10);
+
+// Behind nginx / Kubernetes ingress (review #4): without this, req.ip is
+// the proxy's IP for every request and rate limiting becomes one shared
+// bucket for the entire app.
+app.set('trust proxy', 1);
 
 // Extend Express Request type
 declare module 'express-serve-static-core' {
@@ -122,19 +143,21 @@ setInterval(() => {
   }
 }, 30000); // Check every 30 seconds
 
-// Socket.IO auth middleware
-io.use((socket, next) => {
+// Socket.IO auth middleware — shares verifyAuthToken with Express (review #8)
+io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) {
     return next(new Error('Authentication required'));
   }
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    socket.data.userId = decoded.userId || decoded.id;
-    next();
-  } catch {
-    next(new Error('Invalid token'));
+  const decoded = verifyAuthToken(token);
+  if (!decoded) {
+    return next(new Error('Invalid token'));
   }
+  if (await isTokenRevoked(decoded.jti, decoded.userId, decoded.iat)) {
+    return next(new Error('Token revoked'));
+  }
+  socket.data.userId = decoded.userId;
+  next();
 });
 
 io.on('connection', (socket) => {
@@ -159,7 +182,13 @@ const emitToUser = (userId: string, event: string, data: any) => {
   io.to(`user:${userId}`).emit(event, data);
 };
 
-// Middleware
+// ============================================================
+// Middleware pipeline (review #14: explicit, commented order —
+// registration order IS execution order in Express)
+// ============================================================
+
+// 1. helmet — security headers/CSP. CSP connectSrc driven by the shared
+//    allowlist so it covers the real frontend origin(s) in production.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -167,7 +196,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "http://localhost:5173", "http://localhost:5000"],
+      connectSrc: ["'self'", ...allowedOrigins],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -180,25 +209,92 @@ app.use(helmet({
     preload: true,
   },
 }));
-app.use(compression());
+// 2. cors — same shared allowlist (review #3)
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5000', 'http://localhost'],
+  origin: allowedOrigins,
   credentials: true,
 }));
+// 3. compression
+app.use(compression());
+// 4. body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Custom middleware
+// 5. request ID + logging
 app.use(requestIdMiddleware);
-app.use(securityHeadersMiddleware);
 app.use(requestLoggingMiddleware);
-app.use(bodyValidationMiddleware);
 
-// Rate limiting middleware using Redis or in-memory fallback
-const createRateLimitMiddleware = (limiterType: 'api' | 'auth' | 'createQuest' | 'shop') => {
+// Idempotency middleware (report fixes #1/#13): clients send an
+// Idempotency-Key header on reward-granting POSTs. A repeated key
+// within 24h replays the recorded response instead of re-applying
+// rewards — neutralizes double-click and network-retry exploits.
+// `optional` mode (older clients): a supplied key is honored and the
+// response recorded, but requests without a key still process.
+const idempotencyMiddleware = (optional = false) => async (req: any, res: any, next: any) => {
+  const key = req.headers['idempotency-key'];
+  if (typeof key === 'string' && key.length > 0) {
+    if (key.length < 8 || key.length > 128) {
+      return res.status(400).json({
+        error: 'Idempotency-Key header must be 8-128 characters',
+      });
+    }
+  } else if (!optional) {
+    return res.status(400).json({
+      error: 'Idempotency-Key header required (8-128 characters) for this endpoint',
+    });
+  }
+  if (typeof key === 'string' && key.length > 0) {
+    try {
+      const userId = getUserId(req);
+      const cached = await getIdempotentResponse(userId, key);
+      if (cached) {
+        res.setHeader('Idempotent-Replay', 'true');
+        return res.status(cached.statusCode).json(JSON.parse(cached.responseJson));
+      }
+      req.idempotencyKey = key;
+    } catch {
+      // getUserId throws when auth didn't populate req.user — treat as unauthenticated
+      return res.sendStatus(401);
+    }
+  }
+  next();
+};
+
+/** Persist the response of an idempotent request so retries replay it. */
+const captureIdempotentResponse = async (req: any, res: any, body: unknown): Promise<void> => {
+  if (!req.idempotencyKey) return;
+  try {
+    await saveIdempotentResponse(getUserId(req), req.idempotencyKey, res.statusCode, JSON.stringify(body ?? null));
+  } catch (error) {
+    logger.error('Failed to persist idempotent response:', error);
+  }
+};
+
+// 6. CSRF BEFORE rate limiting (review #13): origin validation is a cheap
+//    stateless check — do it first so spoofed-origin floods don't burn
+//    Redis rate-limit quota for legitimate users. csrf.ts exempts the
+//    signature-verified Stripe webhook path itself.
+app.use('/api/', csrfProtection);
+
+// 7. Rate limiting — account-keyed where possible (review #11): once a
+//    user is authenticated, share the bucket across their IPs (CGNAT/
+//    corporate NAT users don't fight each other) while pre-auth routes
+//    stay IP-keyed.
+const createRateLimitMiddleware = (limiterType: RateLimiterType) => {
   return async (req: any, res: any, next: any) => {
     try {
-      const key = req.ip || req.connection.remoteAddress;
+      // Authenticated requests are keyed by user; fall back to IP pre-auth.
+      let key: string = req.ip || req.connection?.remoteAddress || 'unknown';
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+      if (token) {
+        try {
+          const decoded = jwt.decode(token) as { userId?: string; id?: string } | null;
+          const claim = decoded?.userId || decoded?.id;
+          if (claim) key = `user:${claim}`;
+        } catch {
+          // invalid token: keep IP key; the route's auth check will reject it
+        }
+      }
       const limiter = getRateLimiter(limiterType);
       await limiter.consume(key);
       next();
@@ -213,27 +309,79 @@ const createRateLimitMiddleware = (limiterType: 'api' | 'auth' | 'createQuest' |
   };
 };
 
-// Apply general API rate limiting
+// Export limiter configs for docs/monitoring without re-deriving them
+export const rateLimitTiers = RATE_LIMIT_CONFIG;
+
 app.use('/api/', createRateLimitMiddleware('api'));
 
-// Apply CSRF protection to all API routes
-app.use('/api/', csrfProtection);
-
-// Performance and caching middleware
-app.use(keepAliveMiddleware);
+// 8. Timing/timeout + GET-only cache headers
 app.use(requestTimingMiddleware);
 app.use(requestTimeoutMiddleware);
 app.use(cachingMiddleware);
 
-// Swagger API Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.get('/api-docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpec);
-});
+// Swagger API Documentation — non-production only (review #12): full API
+// docs including auth flows shouldn't be exposed publicly in production.
+if (env.NODE_ENV !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+}
 
 // Analytics routes
 setupAnalyticsRoutes(app);
+
+// ============================================================
+// Auth token verification — single shared helper (review #8): used by
+// both the Express middleware and the Socket.IO handshake so token-shape
+// changes only ever happen in one place. Algorithm is explicitly pinned
+// to HS256 (algorithm-confusion hardening).
+// ============================================================
+const JWT_ALGORITHMS = ['HS256'] as const;
+
+interface VerifiedToken {
+  userId: string;
+  role?: string;
+  jti?: string;
+  iat?: number;
+}
+
+const verifyAuthToken = (token: string): VerifiedToken | null => {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: [...JWT_ALGORITHMS] }) as any;
+    const userId = decoded.userId || decoded.id;
+    if (!userId || typeof userId !== 'string') return null;
+    return {
+      userId,
+      role: decoded.role,
+      jti: decoded.jti,
+      iat: decoded.iat,
+    };
+  } catch {
+    return null;
+  }
+};
+
+// Auth middleware (declared early: used by routes below)
+const authenticateToken = async (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token == null) return res.sendStatus(401);
+
+  const user = verifyAuthToken(token);
+  if (!user) return res.sendStatus(403);
+
+  // Revocation check (report fix #8): a logged-out or invalidated
+  // token must be rejected even though its signature is still valid.
+  if (await isTokenRevoked(user.jti, user.userId, user.iat)) {
+    return res.status(401).json({ error: 'Token revoked' });
+  }
+
+  req.user = user;
+  next();
+};
 
 // Push notification token registration
 app.post('/api/push/register', authenticateToken, async (req, res) => {
@@ -272,19 +420,9 @@ app.post('/api/push/register', authenticateToken, async (req, res) => {
   }
 });
 
-// Auth middleware
-const authenticateToken = (req: any, res: any, next: any) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (token == null) return res.sendStatus(401);
-
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.sendStatus(403);
-    req.user = user;
-    next();
-  });
-};
+// Superadmin routes (mounted under /api/admin)
+import adminRoutes from './adminRoutes';
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/health', healthCheckMiddleware);
@@ -1120,6 +1258,19 @@ app.post('/api/hunter/streak-ward', authenticateToken, async (req, res) => {
       });
     });
 
+    // Ledger entry for the gold spend
+    await withRetry(() =>
+      prisma.$transaction(async (tx) =>
+        recordLedgerEntry(tx as any, {
+          userId,
+          reason: 'STREAK_WARD',
+          goldDelta: -STREAK_WARD_COST,
+          description: `Purchased Streak Ward (${result.streakWards}/${MAX_STREAK_WARDS})`,
+        })
+      )
+    );
+    recordEconomyChange('streak_ward', 0, -STREAK_WARD_COST);
+
     await invalidateUserCache(userId);
     emitToUser(userId, 'stats:updated', result);
 
@@ -1307,6 +1458,11 @@ app.delete('/api/account', authenticateToken, async (req, res) => {
       },
     });
 
+    // Revoke all tokens issued before now ("logout everywhere"),
+    // not just the current one — the user no longer exists.
+    await revokeAllUserTokens(userId);
+    logger.info(`All tokens revoked for deleted user ${userId}`, { requestId: req.id });
+
     // Revoke all active sessions/sockets for this user
     emitToUser(userId, 'account:deleted', { message: 'Account deleted' });
 
@@ -1344,9 +1500,57 @@ app.post('/api/subscription/webhook', express.raw({ type: 'application/json' }),
   }
 });
 
-// Error handling (must be last)
-app.use(errorHandlerMiddleware);
-app.use(notFoundMiddleware);
+// HTTP request metrics for the /metrics endpoint
+app.use((req: any, res: any, next: any) => {
+  res.on('finish', () => {
+    try {
+      incrementCounter(
+        'soloquest_http_requests_total',
+        'Total HTTP requests',
+        ['method', 'route', 'status'],
+        [req.method, req.route?.path || req.path, String(res.statusCode)]
+      );
+    } catch {
+      // metrics must never break a request
+    }
+  });
+  next();
+});
+
+// Prometheus-style metrics endpoint (report fix #6)
+app.get('/metrics', async (req, res) => {
+  try {
+    setGauge(
+      'soloquest_websocket_connections',
+      'Currently connected WebSocket clients',
+      [],
+      [],
+      activeConnections.size
+    );
+    setGauge(
+      'soloquest_process_uptime_seconds',
+      'Process uptime in seconds',
+      [],
+      [],
+      Math.floor(process.uptime())
+    );
+    const cacheStats = await getCacheStats();
+    setGauge('soloquest_cache_keys', 'Cache key count', [], [], cacheStats.totalKeys);
+    if (cacheStats.hitRate !== undefined) {
+      setGauge('soloquest_cache_hit_rate_percent', 'Cache hit rate percentage', [], [], cacheStats.hitRate);
+    }
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.send(renderMetrics());
+  } catch (error) {
+    logger.error('Metrics endpoint error:', error);
+    res.status(500).send('# metrics unavailable');
+  }
+});
+
+// NOTE: notFoundMiddleware and errorHandlerMiddleware are registered at the
+// VERY END of this file (after the last route). Express dispatches strictly
+// in registration order — registering them here would 404 every route
+// defined below (review critical #1).
 
 // Helper to get user ID from request
 const getUserId = (req: any): string => {
@@ -1502,13 +1706,10 @@ const calculateScaledReward = (
   return Math.floor(baseReward * levelScaling * (rankMultiplier[questRank] || 1.0));
 };
 
-const baseXpByRank: Record<string, number> = {
-  E: 10, D: 25, C: 50, B: 100, A: 200, S: 500,
-};
-
-const baseGoldByRank: Record<string, number> = {
-  E: 5, D: 10, C: 20, B: 40, A: 80, S: 200,
-};
+// Reward tables moved to economy.ts (versioned single source of truth,
+// report fix #3) — aliased here so existing call sites stay untouched.
+const baseXpByRank: Record<string, number> = BASE_XP_BY_RANK;
+const baseGoldByRank: Record<string, number> = BASE_GOLD_BY_RANK;
 
 // ========================
 // Gameplay Systems Helpers (combo, loot, speedrun, stats, flavor, adaptive)
@@ -1776,7 +1977,7 @@ app.post('/api/auth/register', createRateLimitMiddleware('auth'), async (req, re
       }
     }));
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(user.id, user.role);
 
     res.status(201).json({
       token,
@@ -1785,6 +1986,7 @@ app.post('/api/auth/register', createRateLimitMiddleware('auth'), async (req, re
         email: user.email,
         displayName: user.displayName,
         hunterId: user.hunterId,
+        role: user.role,
       }
     });
   } catch (error) {
@@ -1793,53 +1995,6 @@ app.post('/api/auth/register', createRateLimitMiddleware('auth'), async (req, re
   }
 });
 
-/**
- * @swagger
- * /api/auth/login:
- *   post:
- *     summary: Login user
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *               password:
- *                 type: string
- *                 minLength: 6
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 token:
- *                   type: string
- *                 user:
- *                   $ref: '#/components/schemas/User'
- *       401:
- *         description: Invalid credentials
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       400:
- *         description: Invalid input
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
 app.post('/api/auth/login', createRateLimitMiddleware('auth'), async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -1869,7 +2024,7 @@ app.post('/api/auth/login', createRateLimitMiddleware('auth'), async (req, res) 
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(user.id, user.role);
 
     res.json({
       token,
@@ -1878,10 +2033,38 @@ app.post('/api/auth/login', createRateLimitMiddleware('auth'), async (req, res) 
         email: user.email,
         displayName: user.displayName,
         hunterId: user.hunterId,
+        role: user.role,
       }
     });
   } catch (error) {
     logger.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Revoke the current access token (logout)
+ *     description: Adds the token's jti to the revocation blocklist so it cannot be reused even though its signature remains valid until expiry.
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token revoked
+ */
+app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+  try {
+    const payload = req.user as { jti?: string } | undefined;
+    if (payload?.jti) {
+      await revokeTokenJti(payload.jti);
+      logger.info('Token revoked on logout', { requestId: req.id });
+    }
+    res.json({ success: true, message: 'Logged out' });
+  } catch (error) {
+    logger.error('Logout error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1937,6 +2120,7 @@ app.get('/api/hunter/me', authenticateToken, async (req, res) => {
         avatarUrl: true,
         createdAt: true,
         deletedAt: true,
+        role: true,
         hunterStats: {
           select: {
             level: true,
@@ -1982,6 +2166,7 @@ app.get('/api/hunter/me', authenticateToken, async (req, res) => {
       email: user.email,
       avatarUrl: user.avatarUrl,
       createdAt: user.createdAt,
+      role: (user as any).role || 'USER',
       stats: user.hunterStats
     };
 
@@ -2301,6 +2486,19 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
 
     // If quest was completed, award rewards server-side with transaction
     if (status === 'COMPLETED' && existingQuest.status !== 'COMPLETED') {
+      // Idempotent-replay guard (report fix #88): a repeated completion with
+      // the same Idempotency-Key replays the original response instead of
+      // re-running the reward path. (The atomic claim below is the backstop
+      // for clients that don't send keys — double-clicks claim zero rows.)
+      if (typeof req.headers['idempotency-key'] === 'string' && req.headers['idempotency-key'].length >= 8) {
+        const replay = await getIdempotentResponse(userId, req.headers['idempotency-key']);
+        if (replay) {
+          res.setHeader('Idempotent-Replay', 'true');
+          return res.status(replay.statusCode).json(JSON.parse(replay.responseJson));
+        }
+        req.idempotencyKey = req.headers['idempotency-key'];
+      }
+
       await prisma.$transaction(async (tx) => {
         // Atomic completion claim (#183): only the first request that flips the
         // status wins the rewards; concurrent duplicate requests claim zero rows.
@@ -2414,6 +2612,18 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
             },
           });
 
+          // Ledger entry (report fix #2): the reward is now auditable and
+          // reconcilable against the cached HunterStats balances.
+          await recordLedgerEntry(tx as any, {
+            userId,
+            reason: 'QUEST_COMPLETED',
+            xpDelta: finalXpReward,
+            goldDelta: finalGoldReward,
+            description: `Completed quest "${existingQuest.title}" (rank ${existingQuest.rank})`,
+            referenceType: 'Quest',
+            referenceId: existingQuest.id,
+          });
+
           // Persist loot drop on the quest record for the client to render
           if (loot.dropped && loot.item) {
             await tx.quest.update({
@@ -2424,6 +2634,8 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
 
           // Invalidate user cache
           await invalidateUserCache(userId);
+
+          recordEconomyChange('quest_completion', finalXpReward, finalGoldReward);
 
           emitToUser(userId, 'stats:updated', updatedStats);
 
@@ -2524,6 +2736,9 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
     }
 
     emitToUser(userId, 'quest:updated', quest);
+
+    // Record the completion response for idempotent replay if a key was sent
+    await captureIdempotentResponse(req, res, quest);
 
     res.json(quest);
   } catch (error) {
@@ -3146,45 +3361,59 @@ app.post('/api/dungeon/complete', authenticateToken, async (req, res) => {
       const newRank = getRankFromLevel(level);
       const oldLevel = stats.level;
 
-      const [updatedStats, notif] = await Promise.all([
-        withRetry(() => prisma.hunterStats.update({
-          where: { userId },
-          data: {
-            exp: newExp,
-            expToNext: xpToNext,
-            gold: stats.gold + goldGain,
-            hp: Math.min(stats.hp + hpGain, stats.hpMax),
-            level,
-            rank: newRank,
-            streak: newStreak,
-            longestStreak: Math.max(stats.longestStreak, newStreak),
-            lastActiveDate: new Date(),
-          },
-          select: {
-            id: true,
-            level: true,
-            exp: true,
-            expToNext: true,
-            progressPercent: true,
-            rank: true,
-            hp: true,
-            hpMax: true,
-            gold: true,
-            streak: true,
-            longestStreak: true,
-          }
-        })),
-        withRetry(() => prisma.notification.create({
-          data: {
+      // Transaction: balance update + ledger entry together so the dungeon
+      // reward stays reconcilable (report fix #87)
+      const updatedStats = await withRetry(() =>
+        prisma.$transaction(async (tx) => {
+          const updated = await tx.hunterStats.update({
+            where: { userId },
+            data: {
+              exp: newExp,
+              expToNext: xpToNext,
+              gold: stats.gold + goldGain,
+              hp: Math.min(stats.hp + hpGain, stats.hpMax),
+              level,
+              rank: newRank,
+              streak: newStreak,
+              longestStreak: Math.max(stats.longestStreak, newStreak),
+              lastActiveDate: new Date(),
+            },
+            select: {
+              id: true,
+              level: true,
+              exp: true,
+              expToNext: true,
+              progressPercent: true,
+              rank: true,
+              hp: true,
+              hpMax: true,
+              gold: true,
+              streak: true,
+              longestStreak: true,
+            }
+          });
+          await recordLedgerEntry(tx as any, {
             userId,
-            message: cleared
-              ? `Daily Dungeon cleared! XP +${xpGain}. Gold +${goldGain}. HP +${hpGain}.`
-              : `Daily Dungeon ended. ${completedTasks}/${totalTasks} completed. XP +${xpGain}.`,
-            type: 'REWARD',
-          },
-          select: { id: true, message: true, type: true, createdAt: true }
-        }))
-      ]);
+            reason: 'DUNGEON_REWARD',
+            xpDelta: xpGain,
+            goldDelta: goldGain,
+            description: cleared ? 'Daily dungeon cleared' : `Daily dungeon ended (${completedTasks}/${totalTasks} tasks)`,
+          });
+          return updated;
+        })
+      );
+      recordEconomyChange('dungeon_completion', xpGain, goldGain);
+
+      const notif = await withRetry(() => prisma.notification.create({
+        data: {
+          userId,
+          message: cleared
+            ? `Daily Dungeon cleared! XP +${xpGain}. Gold +${goldGain}. HP +${hpGain}.`
+            : `Daily Dungeon ended. ${completedTasks}/${totalTasks} completed. XP +${xpGain}.`,
+          type: 'REWARD',
+        },
+        select: { id: true, message: true, type: true, createdAt: true }
+      }));
 
       // Invalidate user cache
       await invalidateUserCache(userId);
@@ -3371,7 +3600,7 @@ app.get('/api/shop', authenticateToken, async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddleware('shop'), async (req, res) => {
+app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddleware('shop'), idempotencyMiddleware(false), async (req, res) => {
   try {
     const userId = getUserId(req);
     const { itemId } = req.params;
@@ -3388,7 +3617,9 @@ app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddlew
     }));
     if (existing) return res.status(400).json({ error: 'Item already owned' });
 
-    // Use transaction to ensure atomic purchase
+    // Fast-path duplicate-ownership pre-check done above; the transaction
+    // below also relies on the @@unique([userId, itemId]) constraint so a
+    // concurrent duplicate purchase fails atomically instead of double-charging.
     const result = await prisma.$transaction(async (tx) => {
       // Check and deduct gold atomically
       const stats = await tx.hunterStats.findUnique({ 
@@ -3400,12 +3631,19 @@ app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddlew
         throw new Error('Insufficient gold');
       }
 
-      // Deduct gold
-      const updatedStats = await tx.hunterStats.update({
-        where: { userId },
-        data: { gold: stats.gold - item.costGold },
-        select: { id: true, gold: true, level: true, rank: true, exp: true }
-      });
+      // Deduct gold using a guarded decrement: the where-clause re-checks
+      // the balance so two concurrent purchases can't both pass the earlier
+      // findUnique check and overdraw the account (race condition).
+      let updatedStats;
+      try {
+        updatedStats = await tx.hunterStats.update({
+          where: { userId, gold: { gte: item.costGold } },
+          data: { gold: { decrement: item.costGold } },
+          select: { id: true, gold: true, level: true, rank: true, exp: true }
+        });
+      } catch {
+        throw new Error('Insufficient gold');
+      }
 
       // Add to inventory
       const inventoryItem = await tx.userInventory.create({
@@ -3425,6 +3663,16 @@ app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddlew
         }
       });
 
+      // Ledger entry in the same transaction as the spend
+      await recordLedgerEntry(tx as any, {
+        userId,
+        reason: 'SHOP_PURCHASE',
+        goldDelta: -item.costGold,
+        description: `Purchased "${item.name}"`,
+        referenceType: 'ShopItem',
+        referenceId: itemId,
+      });
+
       // Create notification
       const notif = await tx.notification.create({
         data: {
@@ -3441,10 +3689,14 @@ app.post('/api/shop/purchase/:itemId', authenticateToken, createRateLimitMiddlew
     // Invalidate user cache
     await invalidateUserCache(userId);
 
+    recordEconomyChange('shop_purchase', 0, -item.costGold);
+
     emitToUser(userId, 'stats:updated', result.updatedStats);
     emitToUser(userId, 'notification:new', result.notif);
 
-    res.json({ inventory: result.inventoryItem, stats: result.updatedStats });
+    const responseBody = { inventory: result.inventoryItem, stats: result.updatedStats };
+    await captureIdempotentResponse(req, res, responseBody);
+    res.json(responseBody);
   } catch (error) {
     logger.error('Purchase item error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -3711,7 +3963,7 @@ app.get('/api/milestones/progress', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/milestones/:id/complete', authenticateToken, async (req, res) => {
+app.post('/api/milestones/:id/complete', authenticateToken, idempotencyMiddleware(true), async (req, res) => {
   try {
     const userId = getUserId(req);
     const { id } = req.params;
@@ -3770,16 +4022,30 @@ app.post('/api/milestones/:id/complete', authenticateToken, async (req, res) => 
 
     if (stats) {
       await withRetry(() =>
-        prisma.hunterStats.update({
-          where: { userId },
-          data: {
-            exp: { increment: milestone.xpReward },
-            gold: { increment: milestone.goldReward },
-          },
+        prisma.$transaction(async (tx) => {
+          const updated = await tx.hunterStats.update({
+            where: { userId },
+            data: {
+              exp: { increment: milestone.xpReward },
+              gold: { increment: milestone.goldReward },
+            },
+          });
+          await recordLedgerEntry(tx as any, {
+            userId,
+            reason: 'MILESTONE_REWARD',
+            xpDelta: milestone.xpReward,
+            goldDelta: milestone.goldReward,
+            description: `Completed milestone "${milestone.name}"`,
+            referenceType: 'Milestone',
+            referenceId: milestone.id,
+          });
+          return updated;
         })
       );
 
-      io.to(userId).emit('statsUpdated', {
+      recordEconomyChange('milestone', milestone.xpReward, milestone.goldReward);
+
+      emitToUser(userId, 'stats:updated', {
         exp: stats.exp + milestone.xpReward,
         gold: stats.gold + milestone.goldReward,
       });
@@ -3796,7 +4062,9 @@ app.post('/api/milestones/:id/complete', authenticateToken, async (req, res) => 
       );
     }
 
-    res.json({ success: true, milestone, reward: { xp: milestone.xpReward, gold: milestone.goldReward } });
+    const milestoneResponse = { success: true, milestone, reward: { xp: milestone.xpReward, gold: milestone.goldReward } };
+    await captureIdempotentResponse(req, res, milestoneResponse);
+    res.json(milestoneResponse);
   } catch (error) {
     logger.error('Complete milestone error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -3978,7 +4246,7 @@ app.delete('/api/mastery-challenges/:id', authenticateToken, async (req, res) =>
   }
 });
 
-app.post('/api/mastery-challenges/:id/attempt', authenticateToken, async (req, res) => {
+app.post('/api/mastery-challenges/:id/attempt', authenticateToken, idempotencyMiddleware(true), async (req, res) => {
   try {
     const userId = getUserId(req);
     const { id } = req.params;
@@ -4038,17 +4306,33 @@ app.post('/api/mastery-challenges/:id/attempt', authenticateToken, async (req, r
 
     if (completed && !existingProgress?.completed) {
       await withRetry(() =>
-        prisma.hunterStats.update({
-          where: { userId },
-          data: {
-            exp: { increment: challenge.xpReward },
-            gold: { increment: challenge.goldReward },
-          },
+        prisma.$transaction(async (tx) => {
+          const updated = await tx.hunterStats.update({
+            where: { userId },
+            data: {
+              exp: { increment: challenge.xpReward },
+              gold: { increment: challenge.goldReward },
+            },
+          });
+          await recordLedgerEntry(tx as any, {
+            userId,
+            reason: 'MASTERY_REWARD',
+            xpDelta: challenge.xpReward,
+            goldDelta: challenge.goldReward,
+            description: `Completed mastery challenge "${challenge.name}"`,
+            referenceType: 'MasteryChallenge',
+            referenceId: challenge.id,
+          });
+          return updated;
         })
       );
+
+      recordEconomyChange('mastery_challenge', challenge.xpReward, challenge.goldReward);
     }
 
-    res.json({ success: true, progress });
+    const progressResponse = { success: true, progress };
+    await captureIdempotentResponse(req, res, progressResponse);
+    res.json(progressResponse);
   } catch (error) {
     logger.error('Attempt mastery challenge error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -4366,7 +4650,7 @@ app.post('/api/quests/:id/recover', authenticateToken, async (req, res) => {
 // Tiered Risk/Reward Completion
 // ========================
 
-app.post('/api/quests/:id/complete-tiered', authenticateToken, async (req, res) => {
+app.post('/api/quests/:id/complete-tiered', authenticateToken, createRateLimitMiddleware('shop'), idempotencyMiddleware(false), async (req, res) => {
   try {
     const userId = getUserId(req);
     const { id } = req.params;
@@ -4390,6 +4674,10 @@ app.post('/api/quests/:id/complete-tiered', authenticateToken, async (req, res) 
       return res.status(403).json({ error: 'Not authorized for this quest' });
     }
 
+    if (quest.status === 'COMPLETED') {
+      return res.status(400).json({ error: 'Quest already completed' });
+    }
+
     const qualityMultipliers = {
       PERFECT: 1.5,
       GOOD: 1.0,
@@ -4400,37 +4688,61 @@ app.post('/api/quests/:id/complete-tiered', authenticateToken, async (req, res) 
     const xpEarned = Math.floor(quest.expReward * multiplier);
     const goldEarned = Math.floor(quest.goldReward * multiplier);
 
-    const [updatedQuest, stats] = await withRetry(() =>
-      prisma.$transaction([
-        prisma.quest.update({
-          where: { id },
-          data: {
-            status: 'COMPLETED',
-            completedAt: new Date(),
-          },
-        }),
-        prisma.hunterStats.update({
+    // Atomic completion claim (mirrors PATCH /api/quests/:id, report fix #13):
+    // only the first request that flips the status wins the rewards; a
+    // concurrent duplicate claims zero rows and gets no double payout.
+    const result = await withRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const claimed = await tx.quest.updateMany({
+          where: { id, userId, status: { not: 'COMPLETED' } },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+        if (claimed.count === 0) {
+          return null;
+        }
+
+        const stats = await tx.hunterStats.update({
           where: { userId },
           data: {
             exp: { increment: xpEarned },
             gold: { increment: goldEarned },
             lastActiveDate: new Date(),
           },
-        }),
-      ])
+        });
+
+        await recordLedgerEntry(tx as any, {
+          userId,
+          reason: 'TIERED_COMPLETION',
+          xpDelta: xpEarned,
+          goldDelta: goldEarned,
+          description: `Tiered completion of quest "${quest.title}" (quality ${completionQuality})`,
+          referenceType: 'Quest',
+          referenceId: id,
+        });
+
+        return { stats };
+      })
     );
 
-    io.to(userId).emit('statsUpdated', {
-      exp: stats.exp + xpEarned,
-      gold: stats.gold + goldEarned,
-    });
+    if (!result) {
+      // Lost the race: quest was completed concurrently
+      return res.status(400).json({ error: 'Quest already completed' });
+    }
 
-    res.json({
+    recordEconomyChange('tiered_completion', xpEarned, goldEarned);
+
+    emitToUser(userId, 'stats:updated', result.stats);
+
+    const updatedQuest = await withRetry(() => prisma.quest.findUnique({ where: { id } }));
+
+    const responseBody = {
       success: true,
       quest: updatedQuest,
       rewards: { xp: xpEarned, gold: goldEarned },
       quality: completionQuality,
-    });
+    };
+    await captureIdempotentResponse(req, res, responseBody);
+    res.json(responseBody);
   } catch (error) {
     logger.error('Complete quest tiered error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -4867,6 +5179,25 @@ const startServer = async () => {
       });
       logger.info('Default shop items created');
     }
+
+    // Load the DB-backed reward table (report fix #86): seeds defaults on
+    // first boot; superadmins can tune values at runtime via /api/admin/rewards
+    await loadRewardTable(prisma as any);
+    logger.info(`Reward table source: ${getRewardTableSource()}`);
+
+    // Initialize background jobs (report fixes #7/#321): BullMQ when Redis
+    // is configured, in-process timers otherwise. Hourly reconciliation,
+    // daily cleanup of expired notifications.
+    await initJobs({
+      runReconciliation: async (triggeredBy) => {
+        const result = await runReconciliation(prisma, { triggeredBy });
+        return { usersWithDrift: result.usersWithDrift, usersChecked: result.usersChecked };
+      },
+      cleanupExpiredNotifications: async () => {
+        const result = await prisma.notification.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+        return result.count;
+      },
+    });
 
     // ========================
     // Guild and Raid System
@@ -5570,7 +5901,7 @@ const startServer = async () => {
      *     security:
      *       - bearerAuth: []
      */
-    app.post('/api/marketplace/quest-packs/:id/purchase', authenticateToken, async (req, res) => {
+    app.post('/api/marketplace/quest-packs/:id/purchase', authenticateToken, idempotencyMiddleware(true), async (req, res) => {
       try {
         const userId = getUserId(req);
         const { id: questPackId } = req.params;
@@ -5618,34 +5949,56 @@ const startServer = async () => {
           }
 
           await withRetry(() =>
-            prisma.$transaction([
-              prisma.hunterStats.update({
-                where: { userId },
+            prisma.$transaction(async (tx) => {
+              const updated = await tx.hunterStats.update({
+                where: { userId, gold: { gte: questPack.price } },
                 data: { gold: { decrement: questPack.price } },
-              }),
-              prisma.questPackPurchase.create({
+              }).catch(() => {
+                throw new Error('Insufficient gold');
+              });
+              await tx.questPackPurchase.create({
                 data: {
                   questPackId,
                   userId,
                 },
-              }),
-              prisma.questPack.update({
+              });
+              await tx.questPack.update({
                 where: { id: questPackId },
                 data: { downloadCount: { increment: 1 } },
-              }),
-            ])
+              });
+              await recordLedgerEntry(tx as any, {
+                userId,
+                reason: 'QUEST_PACK_PURCHASE',
+                goldDelta: -questPack.price,
+                description: `Purchased quest pack "${questPack.name}"`,
+                referenceType: 'QuestPack',
+                referenceId: questPackId,
+              });
+              return updated;
+            })
           );
+          recordEconomyChange('quest_pack_purchase', 0, -questPack.price);
         } else {
           // Stripe payment would be handled here
           return res.status(501).json({ error: 'Stripe payment not implemented for quest packs' });
         }
 
-        res.json({ success: true, message: 'Quest pack purchased successfully' });
+        const packResponse = { success: true, message: 'Quest pack purchased successfully' };
+        await captureIdempotentResponse(req, res, packResponse);
+        res.json(packResponse);
       } catch (error) {
         logger.error('Purchase quest pack error:', error);
         res.status(500).json({ error: 'Internal server error' });
       }
     });
+
+    // ============================================================
+    // Error handling — MUST be the last middleware registered
+    // (review critical #1): the catch-all 404 runs when no route matched;
+    // the 4-arg error handler is always final in the chain.
+    // ============================================================
+    app.use(notFoundMiddleware);
+    app.use(errorHandlerMiddleware);
 
     httpServer.listen(port, () => {
       logger.info(`Server is running on port ${port}`);
@@ -5657,6 +6010,8 @@ const startServer = async () => {
       httpServer.close(() => {
         logger.info('HTTP server closed');
       });
+      io.close(); // drain WebSocket connections cleanly (fix #149)
+      await closeJobs(); // drain in-flight jobs before exit (fix #337)
       await prisma.$disconnect();
       logger.info('Database disconnected');
       await closeRedisClient();

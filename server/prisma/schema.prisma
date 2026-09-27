@@ -42,6 +42,8 @@ generator client {
 // Payment Method: STRIPE, PAYPAL, APPLE_PAY, GOOGLE_PAY
 // Raid Status: ACTIVE, COMPLETED, FAILED, CANCELLED
 // Notification Type: QUEST_COMPLETED, QUEST_FAILED, LEVEL_UP, ACHIEVEMENT, REMINDER, SOCIAL, SYSTEM
+// Ledger Reason: QUEST_COMPLETED, QUEST_PENALTY, SHOP_PURCHASE, STREAK_WARD, MILESTONE_REWARD, MASTERY_REWARD, QUEST_PACK_PURCHASE, TIERED_COMPLETION, DUNGEON_REWARD, ADJUSTMENT
+// Reward Config Key: QUEST_XP_E, QUEST_XP_D, ... QUEST_XP_S, QUEST_GOLD_E, ... QUEST_GOLD_S
 
 // ============================================================
 // CORE USER MODELS
@@ -55,6 +57,7 @@ model User {
   displayName String // User's display name
   email         String   @unique // User's email (used for login)
   passwordHash  String   // Hashed password (bcrypt)
+  role          String   @default("USER") // User role: USER, SUPERADMIN (RBAC #240)
   avatarUrl     String? // Optional avatar image URL
   createdAt     DateTime @default(now()) // Account creation timestamp
   updatedAt     DateTime @updatedAt // Last update timestamp
@@ -83,6 +86,7 @@ model User {
   onboardingProgress OnboardingProgress? @relation("UserOnboardingProgress")
   retentionMetrics RetentionMetrics? @relation("UserRetentionMetrics")
   pushTokens PushToken[] @relation("UserPushTokens")
+  economyLedger  EconomyLedger[] @relation("UserEconomyLedger")
   
   @@index([organizationId]) // Fast organization member lookups
   @@index([createdAt]) // Chronological queries
@@ -802,6 +806,67 @@ model UserSettings {
 }
 
 // ============================================================
+// ECONOMY AUDIT MODELS
+// ============================================================
+
+/// Immutable transaction ledger for every gold/XP change.
+/// Written in the same transaction as the balance mutation so the
+/// economy is fully auditable and reconstructable (reconciliation
+/// = sum of ledger deltas vs cached HunterStats.exp/gold).
+model EconomyLedger {
+  id                String   @id @default(uuid())
+  userId            String   @map("fk_user_id")
+  reason            String // Ledger reason (see enum comment at top of file)
+  xpDelta           Int      @default(0) // XP change (negative for penalties)
+  goldDelta         Int      @default(0) // Gold change (negative for spends)
+  description       String // Human-readable explanation
+  referenceType     String? // e.g. "Quest", "ShopItem", "Milestone"
+  referenceId       String? // ID of the referenced entity
+  rewardTableVersion Int     @default(1) // Version of the reward table in effect
+  createdAt         DateTime @default(now()) // Entry timestamp
+  user              User     @relation("UserEconomyLedger", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt]) // User's economy history over time
+  @@index([reason]) // Filter by reason code (fraud investigation)
+  @@index([referenceType, referenceId]) // Lookup by referenced entity
+  @@map("economy_ledger")
+}
+
+/// Versioned, DB-backed reward table (report fix #86).
+/// One row per economy knob (e.g. "QUEST_XP_B" = 100). Seeded from the
+/// code defaults on first boot; superadmins tune values at runtime via
+/// the admin API, which bumps the table version so ledger rows record
+/// which reward table produced each reward.
+model RewardConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique // e.g. "QUEST_XP_B", "QUEST_GOLD_S"
+  value     Int // Reward amount
+  version   Int      @default(1) // Bumped when any value changes
+  updatedAt DateTime @updatedAt
+  updatedBy String? // userId of the superadmin who last changed it
+
+  @@map("reward_configs")
+}
+
+/// Persisted economy-reconciliation results (report fixes #103/#112).
+/// One row per reconciliation run comparing HunterStats balances against
+/// the sum of EconomyLedger deltas per user.
+model ReconciliationState {
+  id             String   @id @default(uuid())
+  runAt          DateTime @default(now())
+  usersChecked   Int
+  usersWithDrift Int
+  maxDriftXp     Int
+  maxDriftGold   Int
+  details        String // JSON array of { userId, driftXp, driftGold, xpBalance, ledgerXp, goldBalance, ledgerGold }
+  triggeredBy    String // "scheduled" | "admin"
+  durationMs     Int
+
+  @@index([runAt]) // Chronological run history
+  @@map("reconciliation_state")
+}
+
+// ============================================================
 // PUSH NOTIFICATION MODELS
 // ============================================================
 
@@ -864,7 +929,7 @@ model OnboardingProgress {
 /// Records daily, weekly, monthly retention data
 model RetentionMetrics {
   id            String   @id @default(uuid())
-  userId        String   @map("fk_user_id")
+  userId        String   @unique @map("fk_user_id")
   day1Active    Boolean  @default(false) // Active on day 1
   day7Active    Boolean  @default(false) // Active on day 7
   day30Active   Boolean  @default(false) // Active on day 30

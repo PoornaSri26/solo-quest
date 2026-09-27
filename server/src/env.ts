@@ -10,6 +10,13 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   FRONTEND_URL: z.string().default('http://localhost:5173'),
+  /**
+   * Comma-separated allowlist of browser origins allowed to call the API.
+   * Single source of truth for CORS, helmet CSP connectSrc, and CSRF
+   * Origin/Referer validation so the three can never drift apart.
+   * localhost entries are always included for development.
+   */
+  ALLOWED_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173,http://localhost:5000,http://localhost'),
 });
 
 function validateEnv() {
@@ -29,3 +36,12 @@ function validateEnv() {
 }
 
 export const env = validateEnv();
+
+/** Parsed origin allowlist (trimmed, deduped) shared by CORS/CSP/CSRF. */
+export const allowedOrigins: string[] = Array.from(
+  new Set(
+    env.ALLOWED_ORIGINS.split(',')
+      .map(o => o.trim())
+      .filter(Boolean)
+  )
+);
