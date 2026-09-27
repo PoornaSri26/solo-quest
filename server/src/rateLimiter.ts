@@ -56,78 +56,57 @@ export async function closeRedisClient() {
   }
 }
 
+// Rate limiter definitions — single source of truth so the Redis-backed
+// and memory-fallback limiters can never drift apart.
+export type RateLimiterType = 'api' | 'auth' | 'createQuest' | 'shop';
+
+export const RATE_LIMIT_CONFIG: Record<RateLimiterType, { points: number; duration: number; keyPrefix: string; description: string }> = {
+  // General API rate limiter (100 requests per 15 minutes)
+  api: { points: 100, duration: 900, keyPrefix: 'api_limit', description: 'General API' },
+  // Auth rate limiter (5 requests per minute)
+  auth: { points: 5, duration: 60, keyPrefix: 'auth_limit', description: 'Authentication' },
+  // Create quest rate limiter (10 requests per minute)
+  createQuest: { points: 10, duration: 60, keyPrefix: 'create_quest_limit', description: 'Quest creation' },
+  // Shop purchase rate limiter (10 requests per minute)
+  shop: { points: 10, duration: 60, keyPrefix: 'shop_limit', description: 'Shop purchases' },
+};
+
 // Rate limiters for different endpoints - will be initialized after Redis connects
-let rateLimiters: {
-  api: RateLimiterRedis;
-  auth: RateLimiterRedis;
-  createQuest: RateLimiterRedis;
-  shop: RateLimiterRedis;
-} | null = null;
+let rateLimiters: Record<RateLimiterType, RateLimiterRedis> | null = null;
 
 export function initRateLimiters() {
   if (!redisClient) {
     throw new Error('Redis client must be initialized before rate limiters');
   }
 
-  rateLimiters = {
-    // General API rate limiter (100 requests per 15 minutes)
-    api: new RateLimiterRedis({
-      storeClient: redisClient as any,
-      keyPrefix: 'api_limit',
-      points: 100,
-      duration: 900, // 15 minutes
-    }),
-
-    // Auth rate limiter (5 requests per minute)
-    auth: new RateLimiterRedis({
-      storeClient: redisClient as any,
-      keyPrefix: 'auth_limit',
-      points: 5,
-      duration: 60, // 1 minute
-    }),
-
-    // Create quest rate limiter (10 requests per minute)
-    createQuest: new RateLimiterRedis({
-      storeClient: redisClient as any,
-      keyPrefix: 'create_quest_limit',
-      points: 10,
-      duration: 60, // 1 minute
-    }),
-
-    // Shop purchase rate limiter (10 requests per minute)
-    shop: new RateLimiterRedis({
-      storeClient: redisClient as any,
-      keyPrefix: 'shop_limit',
-      points: 10,
-      duration: 60, // 1 minute
-    }),
-  };
+  rateLimiters = Object.fromEntries(
+    (Object.keys(RATE_LIMIT_CONFIG) as RateLimiterType[]).map(type => [
+      type,
+      new RateLimiterRedis({
+        storeClient: redisClient as any,
+        keyPrefix: RATE_LIMIT_CONFIG[type].keyPrefix,
+        points: RATE_LIMIT_CONFIG[type].points,
+        duration: RATE_LIMIT_CONFIG[type].duration,
+      }),
+    ])
+  ) as Record<RateLimiterType, RateLimiterRedis>;
 }
 
 // Fallback to memory-based rate limiter if Redis is not available
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 
-export const fallbackRateLimiters = {
-  api: new RateLimiterMemory({
-    points: 100,
-    duration: 900,
-  }),
-  auth: new RateLimiterMemory({
-    points: 5,
-    duration: 60,
-  }),
-  createQuest: new RateLimiterMemory({
-    points: 10,
-    duration: 60,
-  }),
-  shop: new RateLimiterMemory({
-    points: 10,
-    duration: 60,
-  }),
-};
+export const fallbackRateLimiters: Record<RateLimiterType, RateLimiterMemory> = Object.fromEntries(
+  (Object.keys(RATE_LIMIT_CONFIG) as RateLimiterType[]).map(type => [
+    type,
+    new RateLimiterMemory({
+      points: RATE_LIMIT_CONFIG[type].points,
+      duration: RATE_LIMIT_CONFIG[type].duration,
+    }),
+  ])
+) as Record<RateLimiterType, RateLimiterMemory>;
 
 // Get rate limiter (Redis or fallback)
-export function getRateLimiter(type: 'api' | 'auth' | 'createQuest' | 'shop') {
+export function getRateLimiter(type: RateLimiterType) {
   if (rateLimiters && redisClient && redisClient.isOpen) {
     return rateLimiters[type];
   }

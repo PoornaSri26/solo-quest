@@ -70,6 +70,13 @@ interface AppState {
   // Game Design Improvements
   feedbackIntensity: 'minimal' | 'standard' | 'enhanced' | 'epic' | null;
 
+  // Entitlements (feature gating from /api/entitlements)
+  entitlements: {
+    plan: string;
+    status: string;
+    features: Record<string, any>;
+  } | null;
+
   // Gameplay systems
   lootEvent: LootItem | null;
   questSuggestion: QuestSuggestion | null;
@@ -103,6 +110,7 @@ interface AppState {
   fetchUserInventory: () => Promise<void>;
   fetchWeeklyStats: () => Promise<void>;
   fetchQuestSummary: () => Promise<void>;
+  fetchEntitlements: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => void;
@@ -242,6 +250,20 @@ export const useStore = create<AppState>()(
 
         logout: () => {
           get().disconnectWebSocket();
+          // Revoke the token server-side so it can't be reused (report fix #8).
+          // Fire-and-forget: local state must clear even if the call fails.
+          const token = get().token;
+          if (token) {
+            fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth/logout`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+            }).catch(() => {
+              // Non-fatal: token expires naturally in 7d worst case
+            });
+          }
           set({ lootEvent: null, questSuggestion: null });
           set({
             hunter: null,
@@ -279,6 +301,7 @@ export const useStore = create<AppState>()(
             state.fetchDungeon(),
             state.fetchNotifications(),
             state.fetchShopItems(),
+            state.fetchEntitlements(),
           ]);
         },
 
@@ -468,6 +491,7 @@ export const useStore = create<AppState>()(
                 email: data.email,
                 avatarUrl: getHunterAvatarUrl(data.avatarUrl, data.hunterId || data.displayName),
                 createdAt: data.createdAt,
+                role: data.role,
               },
             });
           } catch (error) {
@@ -612,6 +636,19 @@ export const useStore = create<AppState>()(
             set({ questSummary: data });
           } catch (error) {
             console.error('Fetch quest summary error:', error);
+          }
+        },
+
+        fetchEntitlements: async () => {
+          const state = get();
+          if (!state.token) return;
+
+          try {
+            const api = createAuthApi(() => state.token);
+            const data = await api.get('/entitlements');
+            set({ entitlements: { plan: data.plan, status: data.status, features: data.features || {} } });
+          } catch (error) {
+            console.error('Fetch entitlements error:', error);
           }
         },
 

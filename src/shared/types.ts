@@ -34,6 +34,7 @@ export interface Hunter {
   email?: string;
   avatarUrl?: string;
   createdAt: string;
+  role?: 'USER' | 'SUPERADMIN';
 }
 
 export interface HunterStats {

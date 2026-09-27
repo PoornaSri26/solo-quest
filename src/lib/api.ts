@@ -1,6 +1,18 @@
 // Centralized API client with retry logic, timeout handling, and error management
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Server retries from this client must never double-apply rewards or
+// purchases: every mutating request carries an Idempotency-Key, and the
+// same key survives the retry loop below.
+const generateIdempotencyKey = (): string => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`;
+};
+
+const idempotentMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 interface ApiRequestOptions extends RequestInit {
   timeout?: number;
   retries?: number;
@@ -37,6 +49,11 @@ const apiClient = async <T = any>(
   const url = endpoint.startsWith('http') ? endpoint : `${API_URL}${endpoint}`;
   let lastError: Error | null = null;
 
+  const method = (fetchOptions.method || 'GET').toUpperCase();
+  // One key per logical operation — reused across the retry loop so the
+  // server treats every retry as the same request.
+  const idempotencyKey = idempotentMethods.has(method) ? generateIdempotencyKey() : null;
+
   // Retry logic
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -48,6 +65,7 @@ const apiClient = async <T = any>(
         ...fetchOptions,
         headers: {
           'Content-Type': 'application/json',
+          ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
           ...headers,
         },
         signal: controller.signal,

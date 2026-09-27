@@ -1,24 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from './logger';
-import { env } from './env';
+import { allowedOrigins } from './env';
 
-// Allowed origins for CSRF protection
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:5000',
-  'http://localhost', // Docker Compose internal
-];
-
-// Add environment-specific origins
-if (env.NODE_ENV === 'production') {
-  // In production, add your actual frontend domain
-  // allowedOrigins.push('https://your-frontend-domain.com');
-}
+// Paths exempt from CSRF: server-to-server endpoints that authenticate via
+// signature verification (Stripe webhook) rather than browser credentials.
+// CSRF attacks work by riding a browser's ambient credentials — a signed
+// webhook has none, and Stripe POSTs carry no Origin header.
+export const CSRF_EXEMPT_PATHS = new Set(['/api/subscription/webhook']);
 
 /**
- * CSRF protection middleware using Origin/Referer header validation
- * This is effective for token-based authentication APIs
+ * CSRF protection middleware using Origin/Referer header validation.
+ * Effective for token-based authentication APIs.
+ * Origins come from the shared ALLOWED_ORIGINS env var (see env.ts) so
+ * CORS, CSP, and CSRF can never drift apart.
  */
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
   // Skip for GET, HEAD, OPTIONS requests (safe methods)
@@ -31,6 +25,11 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
+  // Skip signature-verified server-to-server endpoints
+  if (CSRF_EXEMPT_PATHS.has(req.path) || CSRF_EXEMPT_PATHS.has(req.originalUrl.split('?')[0])) {
+    return next();
+  }
+
   const origin = req.headers.origin;
   const referer = req.headers.referer;
 
@@ -39,29 +38,40 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     if (allowedOrigins.includes(origin)) {
       return next();
     }
-    logger.warn(`CSRF violation: Invalid Origin header: ${origin}`);
+    logger.warn(`CSRF violation: Invalid Origin header: ${origin}`, { requestId: (req as any).id });
     return res.status(403).json({ error: 'Invalid origin' });
   }
 
   // Fallback to Referer header
   if (referer) {
-    const refererOrigin = new URL(referer).origin;
-    if (allowedOrigins.includes(refererOrigin)) {
-      return next();
+    try {
+      const refererOrigin = new URL(referer).origin;
+      if (allowedOrigins.includes(refererOrigin)) {
+        return next();
+      }
+    } catch {
+      // malformed Referer — fall through to rejection
     }
-    logger.warn(`CSRF violation: Invalid Referer header: ${referer}`);
+    logger.warn(`CSRF violation: Invalid Referer header: ${referer}`, { requestId: (req as any).id });
     return res.status(403).json({ error: 'Invalid referer' });
   }
 
-  // In development, allow requests without Origin/Referer for testing
-  if (env.NODE_ENV === 'development') {
-    logger.warn('CSRF check skipped in development: No Origin/Referer header');
+  // No Origin/Referer: in development allow for curl/testing convenience.
+  // Production rejects — except the exempt webhook path handled above.
+  if (env_NODE_ENV_IS_DEV()) {
+    logger.warn('CSRF check skipped in development: No Origin/Referer header', { requestId: (req as any).id });
     return next();
   }
 
-  logger.warn('CSRF violation: Missing Origin and Referer headers');
+  logger.warn('CSRF violation: Missing Origin and Referer headers', { requestId: (req as any).id });
   res.status(403).json({ error: 'CSRF protection: Missing origin/referer' });
 };
+
+// Kept as a tiny function to avoid importing env (and thus failing in test
+// environments where env vars are mocked differently) at module load time.
+function env_NODE_ENV_IS_DEV(): boolean {
+  return process.env.NODE_ENV === 'development';
+}
 
 /**
  * Generate a CSRF token for cookie-based authentication (future use)
