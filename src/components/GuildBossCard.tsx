@@ -57,7 +57,7 @@ const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
   { tier: 5, name: 'The Rift Sovereign', hp: 25000 },
 ];
 
-const RANK_STRIKE_HINT = 'Every quest you clear lands a strike: E=100 · D=200 · C=300 · B=400 · A=500 · S=600 damage.';
+const RANK_STRIKE_HINT = 'Every quest you clear lands a strike: E=100 · D=200 · C=300 · B=400 · A=500 · S=600 damage. Tiered completions scale it: PERFECT ×1.5 · POOR ×0.5.';
 
 export default function GuildBossCard({ onChanged }: { onChanged?: () => void }) {
   const token = useStore((s) => s.token);

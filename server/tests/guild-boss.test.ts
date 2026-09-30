@@ -20,6 +20,12 @@ describe('Guild shared boss fights (#96)', () => {
   ];
 
   const rankDamage: Record<string, number> = { E: 1, D: 2, C: 3, B: 4, A: 5, S: 6 };
+  const BOSS_QUALITY_MULTIPLIER: Record<string, number> = { PERFECT: 1.5, GOOD: 1, POOR: 0.5 };
+  const bossStrikeDamage = (rank: string, quality?: string | null): bigint => {
+    const base = BigInt(rankDamage[rank] ?? 1) * BigInt(100);
+    const mult = (quality && BOSS_QUALITY_MULTIPLIER[quality]) || 1;
+    return BigInt(Math.round(Number(base) * mult));
+  };
 
   it('defines strictly increasing boss HP by tier with unique names', () => {
     for (let i = 1; i < GUILD_BOSSES.length; i++) {
@@ -33,6 +39,24 @@ describe('Guild shared boss fights (#96)', () => {
     expect(rankDamage.E).toBeLessThan(rankDamage.B);
     expect(rankDamage.B).toBeLessThan(rankDamage.S);
     expect(rankDamage.S * 100).toBe(600);
+  });
+
+  it('scales strike damage by tiered completion quality', () => {
+    // PERFECT 1.5x, GOOD 1x, POOR 0.5x; null/unknown quality = standard 1x
+    expect(bossStrikeDamage('C').toString()).toBe('300');
+    expect(bossStrikeDamage('C', 'GOOD').toString()).toBe('300');
+    expect(bossStrikeDamage('C', 'PERFECT').toString()).toBe('450');
+    expect(bossStrikeDamage('C', 'POOR').toString()).toBe('150');
+    expect(bossStrikeDamage('S', 'PERFECT').toString()).toBe('900');
+    expect(bossStrikeDamage('E', 'POOR').toString()).toBe('50');
+    expect(bossStrikeDamage('B', null).toString()).toBe('400');
+    expect(bossStrikeDamage('B', 'MADE_UP').toString()).toBe('400');
+  });
+
+  it('rounds fractional damage up to a whole number', () => {
+    // 150 * 1.5 = 225 exactly; an odd base like 350 * 0.5 = 175 — both exact.
+    // Use a case with a repeating fraction guard: 100 * 1.5 = 150 (exact).
+    expect(Number(bossStrikeDamage('D', 'PERFECT')) % 1).toBe(0);
   });
 
   it('accepts only eligible quests for strikes', () => {

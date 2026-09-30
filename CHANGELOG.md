@@ -5,6 +5,7 @@ All notable changes to Solo Quest are documented in this file. The format is bas
 ## [Unreleased]
 
 ### Added
+- Quality-scaled boss strikes (#96): tiered completions record their quality on the quest (`PERFECT`/`GOOD`/`POOR`) and boss strikes scale accordingly (×1.5 / ×1 / ×0.5); standard completions stay at ×1.
 - Guild boss kill-feed (#96): `GET /api/guilds/boss/history` returns past victories (tier, fighter count, top slayer, defeat date, newest first); the Social page boss card renders a "Past Victories" feed that refreshes live when a boss falls.
 - Boss victory rewards (#96): defeating a shared boss pays every fighter flat gold scaled by tier (100g × tier), credited atomically inside the killing-blow transaction with `BOSS_VICTORY` ledger entries — the boss can never pay out twice.
 - Live boss fight state (#96): `boss:updated` socket events feed a store-level `bossState`; the Social page boss card re-fetches HP and leaderboard in real time as any guild member lands strikes.
