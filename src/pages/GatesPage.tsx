@@ -33,7 +33,7 @@ const GatesPage: React.FC = () => {
         name: newGateName.trim(),
         rank: newGateRank,
         deadline: newGateDeadline ? newGateDeadline : null,
-        status: 'active',
+        status: 'ACTIVE',
       });
       setNewGateName('');
       setNewGateRank('E');
