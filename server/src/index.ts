@@ -1916,6 +1916,12 @@ const calculateStatGrowth = (category: string, rank: string): number => {
   return categoryToStat[category] ? (rankGrowth[rank] ?? 1) : 0;
 };
 
+/** HP recovery based on quest rank - higher ranks restore more HP. */
+const calculateHpRecovery = (rank: string): number => {
+  const rankRecovery: Record<string, number> = { E: 2, D: 3, C: 4, B: 5, A: 7, S: 10 };
+  return rankRecovery[rank] ?? 2;
+};
+
 /** Procedural flavor text (#25) — deterministic per quest, no storage needed. */
 const FLAVOR_OPENERS: Record<string, string[]> = {
   Combat: ['A shadow stirs', 'Steel your nerves', 'The arena calls'],
@@ -2673,16 +2679,6 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           finalXpReward += varietyBonus;
           finalGoldReward += Math.floor(varietyBonus / 2);
 
-          // Dual-purpose bonus
-          const dualPurposeBonus = calculateDualPurposeBonus({
-            isDaily: existingQuest.deadline !== null,
-            contributesToStreak: stats.streak > 0,
-            unlocksLore: false, // Could be expanded with lore system
-            completesAchievement: false // Could be expanded with achievement system
-          });
-          finalXpReward += dualPurposeBonus.xpBonus;
-          finalGoldReward += dualPurposeBonus.goldBonus;
-
           // Progression scaling
           finalXpReward = calculateScaledReward(finalXpReward, stats.level, existingQuest.rank);
           finalGoldReward = calculateScaledReward(finalGoldReward, stats.level, existingQuest.rank);
@@ -2709,6 +2705,9 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           // Category-trained stat growth (#3)
           const statField = categoryToStat[existingQuest.category];
           const statGain = calculateStatGrowth(existingQuest.category, existingQuest.rank);
+          
+          // HP recovery based on quest rank
+          const hpRecovery = calculateHpRecovery(existingQuest.rank);
 
           // Combo bookkeeping: continue streak-of-day or start a new one
           const todayStart = new Date(nowDate);
@@ -2716,6 +2715,47 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           const comboDay = stats.comboDate ? new Date(stats.comboDate) : null;
           const isSameDay = comboDay && !Number.isNaN(comboDay.getTime()) && comboDay.setHours(0, 0, 0, 0) === todayStart.getTime();
           const newComboCount = isSameDay ? stats.comboCount + 1 : 1;
+
+          // Streak bookkeeping: increment daily streak on quest completion
+          // Check if this is the first quest completed today to determine streak increment
+          const lastActiveDateForStreak = stats.lastActiveDate ? new Date(stats.lastActiveDate) : null;
+          const yesterday = new Date(todayStart);
+          yesterday.setDate(yesterday.getDate() - 1);
+          
+          // Dual-purpose bonus: determine if this quest contributes to streak
+          // A quest contributes if it's a daily quest OR if the user was active yesterday
+          const lastActiveDateCopy = lastActiveDateForStreak ? new Date(lastActiveDateForStreak) : null;
+          const wasActiveYesterday = lastActiveDateCopy && 
+            new Date(lastActiveDateCopy.setHours(0, 0, 0, 0)).getTime() === yesterday.getTime();
+          const contributesToStreak = existingQuest.deadline !== null || wasActiveYesterday;
+          
+          const dualPurposeBonus = calculateDualPurposeBonus({
+            isDaily: existingQuest.deadline !== null,
+            contributesToStreak: contributesToStreak,
+            unlocksLore: false, // Could be expanded with lore system
+            completesAchievement: false // Could be expanded with achievement system
+          });
+          finalXpReward += dualPurposeBonus.xpBonus;
+          finalGoldReward += dualPurposeBonus.goldBonus;
+          
+          // Calculate new streak value
+          let newStreak = stats.streak;
+          if (lastActiveDateForStreak) {
+            lastActiveDateForStreak.setHours(0, 0, 0, 0);
+            // If last active was yesterday or today, continue streak
+            if (lastActiveDateForStreak.getTime() === yesterday.getTime() || lastActiveDateForStreak.getTime() === todayStart.getTime()) {
+              // Only increment if this is the first quest completed today
+              if (lastActiveDateForStreak.getTime() !== todayStart.getTime()) {
+                newStreak = stats.streak + 1;
+              }
+            } else if (lastActiveDateForStreak.getTime() < yesterday.getTime()) {
+              // Streak broken - start new streak
+              newStreak = 1;
+            }
+          } else {
+            // First ever quest
+            newStreak = 1;
+          }
 
           const newExp = stats.exp + finalXpReward;
           const newGold = stats.gold + finalGoldReward;
@@ -2732,9 +2772,11 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
               gold: newGold,
               level,
               rank: newRank,
-              hp: Math.min(stats.hp + 2, stats.hpMax),
+              hp: Math.min(stats.hp + hpRecovery, stats.hpMax),
               comboCount: newComboCount,
               comboDate: nowDate,
+              streak: newStreak,
+              longestStreak: Math.max(stats.longestStreak, newStreak),
               ...(statField && statGain > 0 ? { [statField]: { increment: statGain } } : {}),
               lastActiveDate: nowDate,
             },
@@ -3467,22 +3509,9 @@ app.post('/api/dungeon/complete', authenticateToken, async (req, res) => {
       const goldGain = cleared ? 25 : Math.floor(10 * (completedTasks / Math.max(totalTasks, 1)));
       const hpGain = cleared ? 10 : 0;
       
-      // Check streak decay - if last completion wasn't yesterday or today, reset streak
-      let newStreak = cleared ? stats.streak + 1 : 0;
-      if (stats.lastActiveDate) {
-        const lastActive = new Date(stats.lastActiveDate);
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        yesterday.setHours(0, 0, 0, 0);
-        
-        const lastActiveDate = new Date(lastActive);
-        lastActiveDate.setHours(0, 0, 0, 0);
-        
-        // If last active date is before yesterday, reset streak
-        if (lastActiveDate < yesterday) {
-          newStreak = cleared ? 1 : 0;
-        }
-      }
+      // Dungeon completion does NOT increment streak - quest completion handles that
+      // This prevents double-counting streak increments when both quest and dungeon are completed
+      const newStreak = stats.streak;
 
       const newExp = stats.exp + xpGain;
       const { level, xpToNext, progressPercent } = calculateLevelAndProgress(newExp);

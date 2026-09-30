@@ -724,9 +724,9 @@ export const useStore = create<AppState>()(
           
           if (quest && stats) {
             const expectedTime = 60; // Default 1 hour expected time
-            const timeTaken = quest.completedAt 
-              ? (new Date(quest.completedAt).getTime() - new Date(quest.createdAt).getTime()) / (1000 * 60)
-              : expectedTime;
+            const now = Date.now();
+            const createdAt = new Date(quest.createdAt).getTime();
+            const timeTaken = (now - createdAt) / (1000 * 60); // Calculate actual time taken
             
             const difficultyMultiplier = { E: 0.5, D: 0.7, C: 1.0, B: 1.3, A: 1.6, S: 2.0 }[quest.rank] || 1.0;
             const questDifficulty = stats.level * difficultyMultiplier;
