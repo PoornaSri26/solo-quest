@@ -2717,6 +2717,10 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           const statField = categoryToStat[existingQuest.category];
           const statGain = calculateStatGrowth(existingQuest.category, existingQuest.rank);
           
+          // Combo bookkeeping: continue streak-of-day or start a new one
+          const todayStart = new Date(nowDate);
+          todayStart.setHours(0, 0, 0, 0);
+
           // HP recovery only on first quest completion of the day to prevent HP farming
           const lastActiveDateForStreak = stats.lastActiveDate ? new Date(stats.lastActiveDate) : null;
           const isFirstQuestToday = !lastActiveDateForStreak || 
@@ -2724,23 +2728,19 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           
           const hpRecovery = isFirstQuestToday ? calculateHpRecovery(existingQuest.rank) : 0;
 
-          // Combo bookkeeping: continue streak-of-day or start a new one
-          const todayStart = new Date(nowDate);
-          todayStart.setHours(0, 0, 0, 0);
           const comboDay = stats.comboDate ? new Date(stats.comboDate) : null;
           const isSameDay = comboDay && !Number.isNaN(comboDay.getTime()) && comboDay.setHours(0, 0, 0, 0) === todayStart.getTime();
           const newComboCount = isSameDay ? stats.comboCount + 1 : 1;
 
           // Streak bookkeeping: increment daily streak on quest completion
           // Check if this is the first quest completed today to determine streak increment
-          const lastActiveDateForStreak = stats.lastActiveDate ? new Date(stats.lastActiveDate) : null;
           const yesterday = new Date(todayStart);
           yesterday.setDate(yesterday.getDate() - 1);
           
           // Dual-purpose bonus: determine if this quest contributes to streak
           // A quest contributes if it's a daily quest OR if the user was active yesterday
           const lastActiveDateCopy = lastActiveDateForStreak ? new Date(lastActiveDateForStreak) : null;
-          const wasActiveYesterday = lastActiveDateCopy && 
+          const wasActiveYesterday = lastActiveDateCopy !== null && 
             new Date(lastActiveDateCopy.setHours(0, 0, 0, 0)).getTime() === yesterday.getTime();
           const contributesToStreak = existingQuest.deadline !== null || wasActiveYesterday;
           

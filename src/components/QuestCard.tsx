@@ -6,6 +6,7 @@ import { useStore } from '../store/useStore';
 import { format, isToday, isTomorrow, isYesterday, parseISO } from 'date-fns';
 import QuestDecision from './QuestDecision';
 import { createAuthApi } from '../lib/api';
+import { Card } from './ui/Card';
 
 const isPastDate = (date: Date) => {
   const now = new Date();
@@ -182,20 +183,9 @@ const QuestCard: React.FC<{
         transitionSpeed={400}
         className="group w-full"
       >
-      <div className={`
-        relative overflow-hidden
-        bg-gradient-to-br from-surface to-raised
-        border border-border-subtle
-        rounded-md p-4
-        hover:border-violet-gate/60
-        transition-all duration-300
-        before:absolute before:inset-0 before:rounded-md
-        before:bg-gradient-to-br before:from-violet-gate/0 before:to-gold-primary/0
-        before:hover:from-violet-gate/5 before:hover:to-gold-primary/5
-        before:transition-all before:duration-300
-        ${isHighlighted ? 'border-2 border-gold-primary shadow-lg shadow-gold-primary/20' : ''}
-      `}
-      style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)' }}
+      <Card 
+        variant="quest" 
+        className={`p-4 ${isHighlighted ? 'border-2 border-gold-primary shadow-gold-glow' : ''}`}
       >
         <div className="relative z-10 flex items-start gap-4">
 
@@ -449,7 +439,7 @@ const QuestCard: React.FC<{
             <div className="bg-gold-primary h-1 rounded-sm transition-slow" style={{ width: '60%' }}></div>
           </div>
         )}
-      </div>
+      </Card>
       </Tilt>
 
       {/* Quest Decision Modal */}
