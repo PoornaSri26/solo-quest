@@ -4,6 +4,9 @@ All notable changes to Solo Quest are documented in this file. The format is bas
 
 ## [Unreleased]
 
+### Fixed
+- `prisma db push` / `prisma migrate` now honor `DATABASE_URL` from `.env` instead of the hardcoded `file:./dev.db` in `schema.prisma`.
+
 ### Added
 - Gameplay systems from the improvement report:
   - **Hunter classes/archetypes** (#24) — Warrior, Mage, Scholar, Assassin, Ranger; selectable during onboarding and via `POST /api/hunter/class`.
