@@ -72,9 +72,10 @@ const DailyDungeonComponent: React.FC = () => {
                 </span>
                 <span className={`ml-2 text-xs font-display ${getRankColor(task.rank)}`}>
                   {task.rank}
-              </span>
-            </div>
-          ))}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {dungeonTasks.length > 0 && (
