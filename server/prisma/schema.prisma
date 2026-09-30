@@ -164,6 +164,7 @@ model Quest {
   reflection   String?    // User's reflection on why the quest failed
   lootDropped  String?    // JSON of last loot drop from this quest
   bossStrikeUsed Boolean  @default(false) // Guild boss fights (#96): completion already fueled a boss strike
+  completionQuality String? // Tiered completion quality: PERFECT | GOOD | POOR (null = standard completion)
   expReward    Int        @default(0) // XP reward for completion
   goldReward   Int        @default(0) // Gold reward for completion
   completedAt  DateTime? // Timestamp when quest was completed

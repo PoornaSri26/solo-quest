@@ -210,9 +210,14 @@ const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
 const BOSS_STRIKE_WINDOW_DAYS = 7; // completions older than this cannot fuel strikes
 
 // Strike damage derives from quest rank (E=1 … S=6 → 100–600 HP), never client input.
+// Tiered completions scale it by recorded quality: PERFECT 1.5x, GOOD 1x, POOR 0.5x.
 const BOSS_RANK_DAMAGE: Record<string, number> = { E: 1, D: 2, C: 3, B: 4, A: 5, S: 6 };
-const bossStrikeDamage = (rank: string): bigint =>
-  BigInt(BOSS_RANK_DAMAGE[rank] ?? 1) * BigInt(100);
+const BOSS_QUALITY_MULTIPLIER: Record<string, number> = { PERFECT: 1.5, GOOD: 1, POOR: 0.5 };
+const bossStrikeDamage = (rank: string, quality?: string | null): bigint => {
+  const base = BigInt(BOSS_RANK_DAMAGE[rank] ?? 1) * BigInt(100);
+  const mult = (quality && BOSS_QUALITY_MULTIPLIER[quality]) || 1;
+  return BigInt(Math.round(Number(base) * mult));
+};
 
 /**
  * Attempt one boss strike for a completed quest (#96).
@@ -262,7 +267,7 @@ async function attemptBossStrike(
   );
   if (!boss) return { outcome: 'no-boss' };
 
-  const damage = bossStrikeDamage(quest.rank);
+  const damage = bossStrikeDamage(quest.rank, quest.completionQuality);
 
   let victoryPayout: { goldEach: number; fighters: number } | undefined;
   const result = await withRetry(() =>
@@ -5130,7 +5135,7 @@ app.post('/api/quests/:id/complete-tiered', authenticateToken, createRateLimitMi
       prisma.$transaction(async (tx) => {
         const claimed = await tx.quest.updateMany({
           where: { id, userId, status: { not: 'COMPLETED' } },
-          data: { status: 'COMPLETED', completedAt: new Date() },
+          data: { status: 'COMPLETED', completedAt: new Date(), completionQuality },
         });
         if (claimed.count === 0) {
           return null;
