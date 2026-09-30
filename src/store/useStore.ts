@@ -19,6 +19,7 @@ import {
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { getHunterAvatarUrl } from '../lib/avatars';
 import { createAuthApi } from '../lib/api';
+import { soundEffects } from '../lib/soundEffects';
 
 // Additional types for hunter profile
 interface WeeklyActivityData {
@@ -380,10 +381,13 @@ export const useStore = create<AppState>()(
 
           socket.on('level:up', (data: { level: number; rank: string }) => {
             console.log(`[System] Level Up! Now Level ${data.level} (Rank ${data.rank})`);
+            soundEffects.levelUp();
             set({ rankUpEvent: data });
           });
 
           socket.on('loot:dropped', (loot: LootItem) => {
+            // Play sound effect based on rarity
+            soundEffects.lootDrop(loot.rarity);
             set({ lootEvent: loot });
             // Auto-clear after the payoff animation window
             setTimeout(() => {
@@ -754,6 +758,15 @@ export const useStore = create<AppState>()(
             else if (timeRatio <= 1.5) feedbackIntensity = 'standard';
             // Minimal feedback: Slow completion
             else feedbackIntensity = 'minimal';
+          }
+
+          // Play sound effect based on feedback intensity
+          if (feedbackIntensity === 'epic') {
+            soundEffects.achievement();
+          } else if (feedbackIntensity === 'enhanced') {
+            soundEffects.questComplete();
+          } else {
+            soundEffects.questComplete();
           }
 
           // Server handles reward logic, we just update status
