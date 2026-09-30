@@ -1,19 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
-import RadialRevealButton from '../components/RadialRevealButton';
 import { VoidDrift } from '../components/originkit/ui/ambient-void';
 import SystemPageHeader from '../components/SystemPageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-
-const shopButtonFont = {
-  fontFamily: '"Rajdhani", sans-serif',
-  fontWeight: 600,
-  fontSize: 13,
-  lineHeight: '1.2em',
-  letterSpacing: '0.02em',
-  textAlign: 'center' as const,
-};
 
 const ShopPage: React.FC = () => {
   const {
@@ -152,7 +142,7 @@ const ShopPage: React.FC = () => {
                         disabled={(stats?.gold ?? 0) < item.costGold || purchasingId === item.id}
                         variant="primary"
                         size="sm"
-                        ariaLabel={`Purchase ${item.name} for ${item.costGold} gold`}
+                        aria-label={`Purchase ${item.name} for ${item.costGold} gold`}
                       >
                         {purchasingId === item.id ? 'Purchasing...' : 'Buy'}
                       </Button>
@@ -187,7 +177,7 @@ const ShopPage: React.FC = () => {
                       onClick={() => handleEquip(inv.id)}
                       variant={inv.equipped ? 'success' : 'secondary'}
                       size="sm"
-                      ariaLabel={`${inv.equipped ? 'Unequip' : 'Equip'} ${inv.item?.name || 'item'}`}
+                      aria-label={`${inv.equipped ? 'Unequip' : 'Equip'} ${inv.item?.name || 'item'}`}
                     >
                       {inv.equipped ? 'Unequip' : 'Equip'}
                     </Button>

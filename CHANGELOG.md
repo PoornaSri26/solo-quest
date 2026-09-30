@@ -5,11 +5,15 @@ All notable changes to Solo Quest are documented in this file. The format is bas
 ## [Unreleased]
 
 ### Added
+- Boss strikes are now automatic (#96): every verified quest completion lands a rank-scaled strike on the guild's active boss via the shared `attemptBossStrike` helper (the explicit `POST /api/guilds/boss/strike` endpoint remains for API/tests). Strike results arrive as a notification plus `boss:updated` socket event — no manual quest-ID input in the UI.
+- Boss fight leaderboard (#96): `GET /api/guilds/boss/current` returns the top 10 damage dealers (display names resolved) and participant count; the Social page renders the ranked list with the leader crowned and your own row highlighted.
 - Guild shared boss fights (#96): guilds summon a tiered rift boss (5 tiers, 1.5k–25k HP) that every member damages by striking with server-verified quest completions — each completion (≤7 days old, rank-scaled E=100…S=600 HP) is one strike, claimed atomically so it can never pay out twice. Live `boss:updated` WebSocket events for participants; new `isBoss`/`bossTier`/`bossStrikeUsed` schema fields with migrations.
 - Hunter log heatmap (#30): GitHub-style 53-week grid of daily quest completions on the dashboard, with month labels, tooltips, current/best streaks, and a yearly total. Backed by `GET /api/hunter/activity-log` (day-bucketed `groupBy` over `completedAt`, hourly cache).
 - Offline connection indicator (#421): a fixed banner shows while the realtime socket is disconnected or reconnecting, so users know stats/quest sync may be stale.
 
 ### Fixed
+- Migration history repaired with a full-schema baseline (`20240101000000_baseline`): `prisma migrate deploy` now replays cleanly from an empty database, and the social/analytics tables missing from the old migration chain are captured. Existing dev databases were marked applied via `migrate resolve`.
+- `MilestoneTracker` broken JSX (div closed after `</Card>`) from the UI-migration commit — component now compiles; `Card`/`Button` UI primitives accept standard HTML attributes (`onClick`, `role`, `aria-label`, …) which the migrated pages already pass.
 - WebSocket handlers are no longer re-attached on repeated `connectWebSocket` calls (StrictMode double-mount and re-login no longer duplicate events); the existing socket's auth token is refreshed instead.
 - Fixed `res.json` crash on raid endpoints: BigInt HP/progress columns (raids, guild totalExp) now serialize to strings via a `toJSON` patch, so `GET /api/guilds/:id/raids` and raid creation no longer throw "Do not know how to serialize a BigInt".
 

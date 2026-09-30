@@ -5,10 +5,12 @@ Open issues with workarounds. Fixed items move to the changelog.
 ## Open
 
 ### Migration history is incomplete: shadow-database replay fails (`prisma migrate dev`)
-**Symptom:** `prisma migrate dev --create-only` fails with P3006 ("no such table: UserSettings") on a fresh shadow database.
-**Cause:** several tables (`raids`, `guilds`, `UserSettings`, `SocialStats`, white-label models, …) were created via `prisma db push` in existing environments and were never captured in a migration file. The migration directory therefore does not reconstruct a full schema, so replay against a fresh database breaks partway through.
-**Impact:** dev databases keep working; `prisma db execute` + `prisma migrate resolve --applied` is the supported flow for adding new migrations (used for the guild-boss migrations, 2026-09-30). CI/test runs seed schema via `db push` or a prebuilt test.db and are unaffected.
-**Fix path:** generate a full baseline migration (`prisma migrate diff --from-empty --to-schema-datamodel` → apply as `--applied` on all environments), after which `migrate dev` works normally. Tracked until then.
+**RESOLVED 2026-09-30 (baseline):** the drifted history was replaced with a full-schema baseline:
+- `20240101000000_baseline` — complete schema as of before the guild-boss work (`prisma migrate diff --from-empty --to-schema-datamodel`), marked applied on existing databases via `prisma migrate resolve`.
+- The two guild-boss migrations were kept (SQL retargeted to the baseline's `@@map` table names, e.g. `"quests"` not `"Quest"`).
+- Old partial migrations were removed from `prisma/migrations/` (preserved in git history under those paths).
+- Fresh-replay verified: `migrate deploy` on an empty database applies all migrations and `prisma migrate diff` against the schema is empty.
+**Remaining caveat:** any other environment that had the old migration rows must be re-baselined once: delete rows from `_prisma_migrations` (or run `migrate resolve --applied 20240101000000_baseline`) before deploying. `prisma migrate dev --create-only` now works against fresh shadow databases.
 
 ### Coverage is excluded for SDK-wrapper and admin-route modules
 **Files:** `server/jest.config.js`

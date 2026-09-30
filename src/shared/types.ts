@@ -10,8 +10,10 @@ export interface RankSuggestion {
 export interface LootItem {
   id: string;
   name: string;
-  rarity: 'common' | 'rare' | 'epic';
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
   emoji: string;
+  /** Optional reward stats granted with the drop (set by the loot-roll hook). */
+  stats?: { xp?: number; gold?: number };
 }
 
 export interface QuestSuggestion {

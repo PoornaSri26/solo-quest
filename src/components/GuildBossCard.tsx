@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Skull, Swords, Users, Crown } from 'lucide-react';
+import { Skull, Swords, Users, Crown, Trophy } from 'lucide-react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { ProgressBar } from './ui/ProgressBar';
@@ -8,9 +8,19 @@ import { useStore } from '../store/useStore';
 
 /**
  * Shared guild boss fight (#96). Damage comes only from server-verified quest
- * completions: each eligible completion (≤7 days old, not already used) deals
- * a rank-scaled strike (E=100 … S=600 HP) via POST /api/guilds/boss/strike.
+ * completions: every eligible completion (≤7 days old, not already used)
+ * automatically lands a rank-scaled strike (E=100 … S=600 HP) on the guild's
+ * active boss — no manual input. This card renders the fight state, the
+ * top-damage leaderboard, and the summon flow.
  */
+interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  damage: string;
+  isMe: boolean;
+}
+
 interface BossState {
   boss: {
     id: string;
@@ -24,6 +34,8 @@ interface BossState {
   hpRemaining?: string;
   percent?: number;
   me?: string;
+  leaderboard?: LeaderboardEntry[];
+  participantCount?: number;
 }
 
 const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
@@ -34,14 +46,15 @@ const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
   { tier: 5, name: 'The Rift Sovereign', hp: 25000 },
 ];
 
+const RANK_STRIKE_HINT = 'Every quest you clear lands a strike: E=100 · D=200 · C=300 · B=400 · A=500 · S=600 damage.';
+
 export default function GuildBossCard({ onChanged }: { onChanged?: () => void }) {
   const token = useStore((s) => s.token);
   const addToast = useStore((s) => s.addToast);
   const [boss, setBoss] = useState<BossState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [striking, setStriking] = useState(false);
+  const [summoning, setSummoning] = useState(false);
   const [summonTier, setSummonTier] = useState(1);
-  const [eligibleQuestId, setEligibleQuestId] = useState('');
 
   const refresh = async () => {
     try {
@@ -60,30 +73,8 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const handleStrike = async () => {
-    if (!eligibleQuestId.trim()) {
-      addToast('error', 'Enter the ID of a quest you completed recently.');
-      return;
-    }
-    setStriking(true);
-    try {
-      const api = createAuthApi(() => token);
-      const data = await api.post<{ message: string }>('/guilds/boss/strike', {
-        questId: eligibleQuestId.trim(),
-      });
-      addToast('success', data.message || 'Strike landed!');
-      setEligibleQuestId('');
-      await refresh();
-      onChanged?.();
-    } catch (err: any) {
-      addToast('error', err?.message || 'Strike failed.');
-    } finally {
-      setStriking(false);
-    }
-  };
-
   const handleSummon = async () => {
-    setStriking(true);
+    setSummoning(true);
     try {
       const api = createAuthApi(() => token);
       await api.post('/guilds/boss/spawn', { tier: summonTier });
@@ -93,7 +84,7 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
     } catch (err: any) {
       addToast('error', err?.message || 'Summon failed.');
     } finally {
-      setStriking(false);
+      setSummoning(false);
     }
   };
 
@@ -116,6 +107,7 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
             <p className="text-xs text-text-secondary">Summon a rift boss for your whole guild to bring down.</p>
           </div>
         </div>
+        <p className="text-xs text-text-secondary mb-4">{RANK_STRIKE_HINT}</p>
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -133,9 +125,9 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
               ))}
             </select>
           </div>
-          <Button onClick={handleSummon} disabled={striking} variant="danger">
+          <Button onClick={handleSummon} disabled={summoning} variant="danger">
             <Crown className="w-4 h-4 mr-1" aria-hidden="true" />
-            {striking ? 'Summoning…' : 'Summon Boss'}
+            {summoning ? 'Summoning…' : 'Summon Boss'}
           </Button>
         </div>
       </Card>
@@ -144,6 +136,7 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
 
   const { boss: active } = boss;
   const percent = Math.min(boss.percent ?? 0, 100);
+  const leaderboard = boss.leaderboard ?? [];
 
   return (
     <Card variant="raid" className="p-6">
@@ -156,6 +149,9 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
             </h3>
             <p className="text-xs text-text-secondary">
               Tier {active!.bossTier} shared boss · {active!.status}
+              {typeof boss.participantCount === 'number' && boss.participantCount > 0
+                ? ` · ${boss.participantCount} fighter${boss.participantCount === 1 ? '' : 's'}`
+                : ''}
             </p>
           </div>
         </div>
@@ -171,7 +167,7 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
       )}
 
       {/* Boss HP bar */}
-      <div className="mb-4">
+      <div className="mb-2">
         <ProgressBar value={percent} variant="red" showLabel />
         <div className="flex justify-between text-xs text-text-secondary mt-1 font-data">
           <span>
@@ -181,33 +177,49 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-3 text-xs text-text-secondary">
-        <span className="flex items-center gap-1">
-          <Users className="w-3.5 h-3.5" aria-hidden="true" />
-          Your damage: <span className="font-data text-gold-primary">{Number(boss.me ?? 0).toLocaleString()}</span>
-        </span>
-      </div>
-
       {active!.status === 'ACTIVE' && (
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex-1 min-w-[200px]">
-            <label htmlFor="strike-quest" className="block text-xs text-text-secondary mb-1">
-              Completed quest ID (one strike per quest, rank sets damage)
-            </label>
-            <input
-              id="strike-quest"
-              type="text"
-              value={eligibleQuestId}
-              onChange={(e) => setEligibleQuestId(e.target.value)}
-              placeholder="Quest you cleared in the last 7 days"
-              className="w-full bg-surface border border-border-subtle rounded-sm px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-crimson"
-            />
-          </div>
-          <Button onClick={handleStrike} disabled={striking} variant="danger">
-            <Swords className="w-4 h-4 mr-1" aria-hidden="true" />
-            {striking ? 'Striking…' : 'Strike'}
-          </Button>
+        <p className="text-xs text-text-secondary mb-4">{RANK_STRIKE_HINT}</p>
+      )}
+
+      {/* Top damage leaderboard */}
+      {leaderboard.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-border-subtle">
+          <h4 className="flex items-center gap-2 text-sm font-display text-text-primary mb-3">
+            <Trophy className="w-4 h-4 text-gold-primary" aria-hidden="true" />
+            Top Damage Dealers
+          </h4>
+          <ol className="space-y-1.5" aria-label="Boss fight damage leaderboard">
+            {leaderboard.map((entry) => (
+              <li
+                key={entry.userId}
+                className={`flex items-center justify-between px-3 py-1.5 rounded-sm text-sm ${
+                  entry.isMe
+                    ? 'bg-gold-primary/10 border border-gold-primary/40 text-text-primary'
+                    : 'text-text-secondary'
+                }`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="font-data text-xs w-5 text-text-muted">#{entry.rank}</span>
+                  <span className="truncate">
+                    {entry.rank === 1 && <Crown className="inline w-3.5 h-3.5 text-gold-primary mr-1" aria-hidden="true" />}
+                    {entry.displayName}
+                    {entry.isMe && <span className="text-gold-primary text-xs ml-1">(you)</span>}
+                  </span>
+                </span>
+                <span className="font-data text-xs text-gold-primary">
+                  {Number(entry.damage).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ol>
         </div>
+      )}
+
+      {leaderboard.length === 0 && active!.status === 'ACTIVE' && (
+        <p className="flex items-center gap-2 text-xs text-text-muted mt-4 pt-4 border-t border-border-subtle">
+          <Users className="w-3.5 h-3.5" aria-hidden="true" />
+          No strikes yet — be the first to land one by clearing a quest.
+        </p>
       )}
     </Card>
   );
