@@ -4,6 +4,12 @@ All notable changes to Solo Quest are documented in this file. The format is bas
 
 ## [Unreleased]
 
+### Added
+- Offline connection indicator (#421): a fixed banner shows while the realtime socket is disconnected or reconnecting, so users know stats/quest sync may be stale.
+
+### Fixed
+- WebSocket handlers are no longer re-attached on repeated `connectWebSocket` calls (StrictMode double-mount and re-login no longer duplicate events); the existing socket's auth token is refreshed instead.
+
 ### Fixed
 - `prisma db push` / `prisma migrate` now honor `DATABASE_URL` from `.env` instead of the hardcoded `file:./dev.db` in `schema.prisma`.
 
