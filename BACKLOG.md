@@ -62,6 +62,8 @@ codebase, annotated `(#N)`) as they are implemented.
 | 467 | Roadmap phase dates | `README.md` (Roadmap section) |
 | 470 | Feedback form → GitHub issues as the active channel; Discord placeholder | `README.md` (Support section) |
 | 466 | OG image for social sharing | `public/og-image.svg` + `index.html` meta tags |
+| 421 | Offline feedback: connection banner while realtime sync is down | `src/components/ConnectionBanner.tsx` |
+| 200 | WS reconnect with bounded attempts + backoff (socket.io reconnection config) | `src/lib/socket.ts` |
 
 ### 3D Avatars & Visuals (3D report §2, items not yet built)
 Selfie-to-avatar via MetaPerson/Avatar SDK (3D-3/24), manual creator enhancements — face sliders (#23),
@@ -265,4 +267,4 @@ niche-owning positioning (#500).
 
 ---
 
-*Maintained by the Solo Quest contributors. Last updated: September 28, 2026.*
+*Maintained by the Solo Quest contributors. Last updated: September 30, 2026.*

@@ -7,6 +7,7 @@ import AuthPage from './pages/AuthPage';
 import LandingPage from './pages/LandingPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SystemToastContainer from './components/SystemToastContainer';
+import ConnectionBanner from './components/ConnectionBanner';
 import QuestFeedback from './components/QuestFeedback';
 import LootPopup from './components/LootPopup';
 import HunterStatusWindow from './components/HunterStatusWindow';
@@ -403,6 +404,9 @@ const AppLayout: React.FC = () => {
       </main>
 
       <SystemToastContainer />
+
+      {/* Offline indicator (#421): shows while realtime sync is down */}
+      <ConnectionBanner />
 
       {/* Game Design: Quest Feedback System */}
       {feedbackIntensity && (

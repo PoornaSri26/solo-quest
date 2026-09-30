@@ -16,7 +16,7 @@ import {
   LootItem,
   QuestSuggestion,
 } from '../shared/types';
-import { connectSocket, disconnectSocket } from '../lib/socket';
+import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { getHunterAvatarUrl } from '../lib/avatars';
 import { createAuthApi } from '../lib/api';
 
@@ -313,6 +313,18 @@ export const useStore = create<AppState>()(
         connectWebSocket: () => {
           const token = get().token;
           if (!token) return;
+
+          // Guard: if a socket already exists (even mid-connect), only refresh its
+          // auth token instead of building a second socket and duplicating handlers.
+          const existing = getSocket();
+          if (existing) {
+            existing.auth = { token };
+            if (!existing.connected) {
+              set({ connectionStatus: 'connecting' });
+              existing.connect();
+            }
+            return;
+          }
 
           set({ connectionStatus: 'connecting' });
 
