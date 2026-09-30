@@ -6096,6 +6096,80 @@ const startServer = async () => {
 
     /**
      * @swagger
+     * /api/guilds/boss/history:
+     *   get:
+     *     summary: Past boss victories for the caller's guild (kill-feed, newest first)
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.get('/api/guilds/boss/history', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+
+        const socialStats = await withRetry(() => prisma.socialStats.findUnique({ where: { userId } }));
+        if (!socialStats?.guildId) {
+          return res.status(403).json({ error: 'You must be in a guild to view boss history' });
+        }
+        const guildId: string = socialStats.guildId;
+
+        const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 25);
+        const victories = await withRetry(() =>
+          prisma.raid.findMany({
+            where: { guildId, isBoss: true, status: 'COMPLETED' },
+            orderBy: { endDate: 'desc' },
+            take: limit,
+            include: { participants: { orderBy: { expContributed: 'desc' }, take: 1 } }, // top slayer only
+          })
+        );
+
+        // Full fighter counts per victory (participants include above is capped at 1).
+        const victoryIds = victories.map((v) => v.id);
+        const counts = victoryIds.length
+          ? await withRetry(() =>
+              prisma.raidParticipant.groupBy({
+                by: ['raidId'],
+                where: { raidId: { in: victoryIds } },
+                _count: { _all: true },
+              })
+            )
+          : [];
+        const countByRaid = new Map(counts.map((c) => [c.raidId, c._count._all]));
+
+        const slayerIds = victories
+          .map((v) => v.participants[0]?.userId)
+          .filter((id): id is string => !!id);
+        const slayers = slayerIds.length
+          ? await withRetry(() =>
+              prisma.user.findMany({
+                where: { id: { in: slayerIds } },
+                select: { id: true, displayName: true, hunterId: true },
+              })
+            )
+          : [];
+        const nameById = new Map(slayers.map((u) => [u.id, u.displayName || u.hunterId || 'Hunter']));
+
+        res.json({
+          victories: victories.map((v) => ({
+            id: v.id,
+            name: v.name,
+            tier: v.bossTier,
+            defeatedAt: v.endDate,
+            totalDamage: v.progressExp.toString(),
+            fighterCount: countByRaid.get(v.id) ?? 0,
+            topSlayer: v.participants[0]
+              ? { displayName: nameById.get(v.participants[0].userId) ?? 'Hunter', isMe: v.participants[0].userId === userId }
+              : null,
+          })),
+        });
+      } catch (error) {
+        logger.error('Get boss history error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
      * /api/guilds/boss/spawn:
      *   post:
      *     summary: Summon a shared boss for the caller's guild
