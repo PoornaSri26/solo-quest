@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Target, Flame, Zap, Lock, Unlock } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { Card } from './ui/Card';
+import { ProgressBar } from './ui/ProgressBar';
+import { Button } from './ui/Button';
 
 interface Milestone {
   id: string;
@@ -166,34 +169,27 @@ const MilestoneTracker: React.FC = () => {
       </div>
 
       {/* Progress Overview */}
-      <div className="bg-raised border border-border-subtle rounded-sm p-4">
+      <Card className="p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-text-secondary">Overall Progress</span>
           <span className="text-sm font-data text-gold-primary">
             {Math.round((completedCount / totalCount) * 100)}%
           </span>
         </div>
-        <div className="w-full bg-gold-dim rounded-sm h-2">
-          <div 
-            className="bg-gold-primary h-2 rounded-sm transition-all duration-500"
-            style={{ width: `${(completedCount / totalCount) * 100}%` }}
-          />
-        </div>
-      </div>
+        <ProgressBar value={(completedCount / totalCount) * 100} variant="gold" size="md" />
+      </Card>
 
       {/* Milestones Grid */}
       <div className="grid gap-3 md:grid-cols-2">
         {milestones.map((milestone) => (
-          <div
+          <Card
             key={milestone.id}
             onClick={() => setSelectedMilestone(milestone)}
-            className={`
-              bg-surface border rounded-sm p-4 cursor-pointer transition-fast
-              ${milestone.completed 
+            className={`p-4 cursor-pointer transition-fast ${
+              milestone.completed 
                 ? 'border-green-clear/30 bg-green-clear/5' 
-                : 'border-border-subtle hover:border-gold-primary/30'
-              }
-            `}
+                : 'hover:border-gold-primary/30'
+            }`}
             role="button"
             tabIndex={0}
             aria-label={`${milestone.title} - ${milestone.completed ? 'Completed' : 'In progress'}`}
@@ -229,14 +225,11 @@ const MilestoneTracker: React.FC = () => {
                       {milestone.current}/{milestone.requirement}
                     </span>
                   </div>
-                  <div className="w-full bg-gold-dim rounded-sm h-1.5">
-                    <div 
-                      className={`h-1.5 rounded-sm transition-all duration-500 ${
-                        milestone.completed ? 'bg-green-clear' : 'bg-gold-primary'
-                      }`}
-                      style={{ width: `${getProgress(milestone.current, milestone.requirement)}%` }}
-                    />
-                  </div>
+                  <ProgressBar 
+                    value={getProgress(milestone.current, milestone.requirement)} 
+                    variant={milestone.completed ? 'green' : 'gold'} 
+                    size="sm" 
+                  />
                 </div>
 
                 {/* Rewards */}
@@ -248,7 +241,7 @@ const MilestoneTracker: React.FC = () => {
                   )}
                 </div>
               </div>
-            </div>
+            </Card>
           </div>
         ))}
       </div>
@@ -262,8 +255,8 @@ const MilestoneTracker: React.FC = () => {
           aria-modal="true"
           aria-labelledby="milestone-detail-title"
         >
-          <div 
-            className="bg-surface border border-border-subtle rounded-sm p-6 max-w-md w-full"
+          <Card 
+            className="p-6 max-w-md w-full"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-4 mb-4">
@@ -277,7 +270,7 @@ const MilestoneTracker: React.FC = () => {
                 </h3>
                 <p className="text-text-secondary mb-4">{selectedMilestone.description}</p>
                 
-                <div className="bg-raised border border-border-subtle rounded-sm p-4 mb-4">
+                <div className="bg-raised border border-border-subtle rounded-md p-4 mb-4">
                   <h4 className="text-sm font-display text-text-primary mb-2">Requirements</h4>
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-text-muted capitalize">{selectedMilestone.category}:</span>
@@ -286,17 +279,16 @@ const MilestoneTracker: React.FC = () => {
                     </span>
                   </div>
                   
-                  <div className="mt-3 w-full bg-gold-dim rounded-sm h-2">
-                    <div 
-                      className={`h-2 rounded-sm ${
-                        selectedMilestone.completed ? 'bg-green-clear' : 'bg-gold-primary'
-                      }`}
-                      style={{ width: `${getProgress(selectedMilestone.current, selectedMilestone.requirement)}%` }}
+                  <div className="mt-3">
+                    <ProgressBar 
+                      value={getProgress(selectedMilestone.current, selectedMilestone.requirement)} 
+                      variant={selectedMilestone.completed ? 'green' : 'gold'} 
+                      size="md" 
                     />
                   </div>
                 </div>
 
-                <div className="bg-raised border border-border-subtle rounded-sm p-4">
+                <div className="bg-raised border border-border-subtle rounded-md p-4">
                   <h4 className="text-sm font-display text-text-primary mb-2">Rewards</h4>
                   <div className="space-y-1 text-sm">
                     <div className="flex items-center gap-2">
@@ -315,13 +307,14 @@ const MilestoneTracker: React.FC = () => {
               </div>
             </div>
 
-            <button
+            <Button
               onClick={() => setSelectedMilestone(null)}
-              className="w-full py-2 bg-gold-primary text-void rounded-sm hover:bg-gold-primary/90 transition-fast"
+              variant="primary"
+              className="w-full"
             >
               Close
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       )}
     </div>
