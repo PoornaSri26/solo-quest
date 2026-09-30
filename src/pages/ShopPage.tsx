@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import RadialRevealButton from '../components/RadialRevealButton';
+import { VoidDrift } from '../components/originkit/ui/ambient-void';
+import SystemPageHeader from '../components/SystemPageHeader';
 
 const shopButtonFont = {
   fontFamily: '"Rajdhani", sans-serif',
@@ -83,13 +85,13 @@ const ShopPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-display text-text-primary mb-2">Shop</h1>
-        <p className="text-text-secondary">
-          Spend your hard-earned gold on cosmetic items to customize your Hunter.
-        </p>
-      </header>
+    <div className="relative p-6">
+      <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={125} linkDistance={90} speed={0.5} dotSize={1.5} />
+      <div className="relative z-10">
+      <SystemPageHeader title="Shop" systemLine="The merchant's ledger is open. Gold only." />
+      <p className="text-text-secondary mb-6">
+        Spend your hard-earned gold on cosmetic items to customize your Hunter.
+      </p>
 
       {error && (
         <div 
@@ -214,6 +216,7 @@ const ShopPage: React.FC = () => {
             )}
           </div>
         </aside>
+      </div>
       </div>
     </div>
   );

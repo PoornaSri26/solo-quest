@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Share2, Trophy, Award, TrendingUp, Building2, Sword, Plus } from 'lucide-react';
 import { SocialStats } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
 import GuildCard from '../components/GuildCard';
 import RaidCard from '../components/RaidCard';
 
@@ -30,13 +31,7 @@ export default function SocialPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const sectionsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!token) {
-      navigate('/auth');
-      return;
-    }
-
-    const fetchData = async () => {
+  const fetchData = useCallback(async () => {
       try {
         const [socialRes, leaderRes, guildsRes] = await Promise.all([
           fetch('http://localhost:5000/api/social/stats', {
@@ -80,10 +75,15 @@ export default function SocialPage() {
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchData();
   }, [token, navigate]);
+
+  useEffect(() => {
+    if (!token) {
+      navigate('/auth');
+      return;
+    }
+    fetchData();
+  }, [fetchData, navigate, token]);
 
   // GSAP animations
   useEffect(() => {
@@ -169,7 +169,6 @@ export default function SocialPage() {
       });
 
       if (res.ok) {
-        const guild = await res.json();
         alert('Guild created successfully!');
         setNewGuildName('');
         setNewGuildDesc('');
@@ -233,7 +232,6 @@ export default function SocialPage() {
       });
 
       if (res.ok) {
-        const raid = await res.json();
         alert('Raid created successfully!');
         setNewRaidName('');
         setNewRaidDesc('');
@@ -284,6 +282,7 @@ export default function SocialPage() {
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse animation-delay-2000"></div>
+        <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={110} linkDistance={100} speed={0.6} />
       </div>
 
       <div ref={pageRef} className="max-w-7xl mx-auto relative z-10">
@@ -293,6 +292,9 @@ export default function SocialPage() {
             Social Features
           </h1>
         </div>
+        <p className="font-system text-text-system text-xs -mt-4 mb-8" aria-label="System: Guild channels open. Hunters coordinate.">
+          <TypeSequence text="[System: Guild channels open. Hunters coordinate.]" />
+        </p>
 
         {/* Guilds Section */}
         <div className="mb-8">

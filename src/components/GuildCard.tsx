@@ -1,4 +1,4 @@
-import { Users, Award, TrendingUp, Sword } from 'lucide-react';
+import { Users, Award, TrendingUp } from 'lucide-react';
 
 interface GuildCardProps {
   guild: {

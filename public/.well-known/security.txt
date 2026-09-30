@@ -1,0 +1,6 @@
+Contact: mailto:security@soloquest.app
+Contact: https://github.com/PoornaSri26/solo-quest/security/advisories/new
+Expires: 2027-09-27T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://soloquest.app/.well-known/security.txt
+Policy: https://github.com/PoornaSri26/solo-quest/blob/master/SECURITY.md

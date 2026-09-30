@@ -2,6 +2,8 @@ import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { getAvatarUrl } from '../lib/avatars';
 import { createAuthApi } from '../lib/api';
+import { VoidDrift } from '../components/originkit/ui/ambient-void';
+import SystemPageHeader from '../components/SystemPageHeader';
 
 // 3D avatar customizer is lazy-loaded (#95): users who never open it never
 // pay the three.js bundle cost on page load.
@@ -84,8 +86,10 @@ const HunterProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-display text-text-primary mb-6">Hunter Profile</h1>
+    <div className="relative p-6">
+      <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={115} linkDistance={95} speed={0.5} />
+      <div className="relative z-10">
+      <SystemPageHeader title="Hunter Profile" systemLine="Hunter records retrieved from the archive." />
 
       {/* 3D Hunter Avatar customizer (#9/#18/#37/#95/#96) */}
       <div className="mb-6">
@@ -384,6 +388,7 @@ const HunterProfilePage: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

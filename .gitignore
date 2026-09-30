@@ -57,3 +57,4 @@ android/capacitor-cordova-android-plugins/
 android/.idea/
 android/local.properties
 android/captures/
+.originkit/

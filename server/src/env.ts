@@ -16,7 +16,7 @@ const envSchema = z.object({
    * Origin/Referer validation so the three can never drift apart.
    * localhost entries are always included for development.
    */
-  ALLOWED_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173,http://localhost:5000,http://localhost'),
+  ALLOWED_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173,http://localhost:5000,http://localhost,http://127.0.0.1:5173,http://127.0.0.1,http://127.0.0.1:5000'),
 });
 
 function validateEnv() {
@@ -45,3 +45,50 @@ export const allowedOrigins: string[] = Array.from(
       .filter(Boolean)
   )
 );
+
+/**
+ * True for browser origins that identify the local machine: `localhost`,
+ * `127.0.0.1`, or the `*.localhost` family — any port.
+ */
+export function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.endsWith('.localhost') ||
+      hostname === '[::1]' ||
+      hostname === '::1'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True for RFC 1918 private-network hosts (any port) — e.g. testing the app
+ * from a phone via the dev machine's LAN IP (vite host: 0.0.0.0).
+ */
+export function isPrivateLanOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Origin validation shared by CORS, CSRF, and Socket.IO.
+ *
+ * - Production: strict allowlist only (ADR-003).
+ * - Development/test: the allowlist always passes, plus localhost on any
+ *   port (vite auto-increments when 5173 is busy) and private LAN IPs
+ *   (mobile device testing). Non-local origins must still be allowlisted.
+ */
+export function isOriginAllowed(origin: string | undefined | null): boolean {
+  if (!origin) return false;
+  if (allowedOrigins.includes(origin)) return true;
+  if (env.NODE_ENV === 'production') return false;
+  return isLocalhostOrigin(origin) || isPrivateLanOrigin(origin);
+}

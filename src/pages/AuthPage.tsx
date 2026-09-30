@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import RadialRevealButton from '../components/RadialRevealButton';
+import { SystemGlyphs, TypeSequence } from '../components/originkit/ui/ambient-void';
 
 const authButtonFont = {
   fontFamily: '"Rajdhani", sans-serif',
@@ -120,6 +121,7 @@ const AuthPage: React.FC = () => {
       <div className="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-gate/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-gold-primary/5 rounded-full blur-3xl" style={{ animationDelay: '1s', animationDuration: '3s' }} />
+        <SystemGlyphs color="#C9A84C" density={85} speed={0.7} seed={9} style={{ position: 'fixed' }} />
       </div>
 
       <div className="relative w-full max-w-md">
@@ -130,7 +132,9 @@ const AuthPage: React.FC = () => {
           </div>
           <h1 className="font-display text-2xl text-text-primary tracking-wide">Solo Quest</h1>
           <p className="font-system text-text-system text-xs mt-2">
-            [System: {isLogin ? 'Hunter identification required.' : 'New hunter registration.'}]
+            <TypeSequence
+              text={isLogin ? '[System: Hunter identification required.]' : '[System: New hunter registration.]'}
+            />
           </p>
         </div>
 

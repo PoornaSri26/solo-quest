@@ -1,4 +1,4 @@
-import { Sword, Users, Target, Clock, CheckCircle } from 'lucide-react';
+import { Sword, Target, Clock, CheckCircle } from 'lucide-react';
 
 interface RaidCardProps {
   raid: {

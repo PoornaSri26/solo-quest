@@ -5,6 +5,7 @@ import { MasteryChallenge, MasteryChallengeProgress } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -209,6 +210,7 @@ export default function MasteryChallengesPage() {
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse animation-delay-2000"></div>
+        <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={110} linkDistance={95} speed={0.65} />
       </div>
 
       <div ref={pageRef} className="max-w-7xl mx-auto relative z-10">
@@ -222,11 +224,13 @@ export default function MasteryChallengesPage() {
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-gradient-to-r from-purple-600 to-purple-400 hover:from-purple-500 hover:to-purple-300 px-6 py-3 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Create Challenge
-          </button>
-        </div>
+          >              <Plus className="w-5 h-5" />
+              Create Challenge
+            </button>
+          </div>
+          <p className="font-system text-text-system text-xs -mt-4 mb-8" aria-label="System: Trial standards enforced. Mastery is measured, not granted.">
+            <TypeSequence text="[System: Trial standards enforced. Mastery is measured, not granted.]" />
+          </p>
 
         <div ref={cardsRef} className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {challenges.map((challenge) => {

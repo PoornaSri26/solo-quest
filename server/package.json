@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "Backend for Solo Quest gamified productivity app",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "ts-node src/index.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",

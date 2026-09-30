@@ -797,6 +797,7 @@ model UserSettings {
   locale                String   @default("en") // User's locale/language
   theme                 String   @default("dark") // UI theme (dark, light, auto)
   avatarConfig          String?  // JSON-serialized 3D avatar config: { bodyType, skinTone, armorColor, accentColor, hairStyle, hairColor, classSigil }
+  storyProgress         String?  // JSON-serialized Chronicle state: { clearedIds: string[] }
   createdAt             DateTime @default(now()) // Creation timestamp
   updatedAt             DateTime @updatedAt // Last update timestamp
   user                  User     @relation("UserSettings", fields: [userId], references: [id], onDelete: Cascade)

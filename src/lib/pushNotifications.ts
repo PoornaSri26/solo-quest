@@ -10,26 +10,26 @@ export class PushNotificationService {
       if (result.receive === 'granted') {
         // Register for push notifications
         await PushNotifications.register();
-        
+
         // Get token
-        const token = await PushNotifications.addListener('registration', (token: Token) => {
+        PushNotifications.addListener('registration', (token: Token) => {
           console.log('Push registration success, token: ' + token.value);
           this.sendTokenToServer(token.value);
         });
 
         // Handle registration error
-        await PushNotifications.addListener('registrationError', (err: any) => {
+        PushNotifications.addListener('registrationError', (err: any) => {
           console.error('Registration error: ', err.error);
         });
 
         // Handle received push notifications
-        await PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
+        PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
           console.log('Push notification received: ', notification);
           this.handleNotificationReceived(notification);
         });
 
         // Handle push notification actions
-        await PushNotifications.addListener('pushNotificationActionPerformed', (notification: ActionPerformed) => {
+        PushNotifications.addListener('pushNotificationActionPerformed', (notification: ActionPerformed) => {
           console.log('Push notification action performed: ', notification);
           this.handleNotificationActionPerformed(notification);
         });
@@ -125,7 +125,10 @@ export class PushNotificationService {
 
   static async cancelAllLocalNotifications() {
     try {
-      await LocalNotifications.cancel();
+      const delivered = await LocalNotifications.getDeliveredNotifications();
+      await LocalNotifications.cancel({
+        notifications: delivered.notifications.map((n) => ({ id: n.id })),
+      });
     } catch (error) {
       console.error('Error canceling local notifications:', error);
     }

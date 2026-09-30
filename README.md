@@ -4,10 +4,41 @@
 
 Solo Quest is a gamified productivity application that turns your daily tasks into quests, your goals into raids, and your personal growth into character progression. Inspired by the concept of gamified self-improvement, this app brings the thrill of RPG progression to your real-life achievements.
 
+> **Why an RPG?** Because streak counters don't spark joy — leveling up does. Solo Quest wraps habit science (variable rewards, loss aversion, streaks, adaptive difficulty) inside classic RPG progression: every task is a quest with rank-based XP, every failure has redemption arcs instead of shame, and your hunter visibly grows from E-rank novice to S-rank legend. It's the "system" whispering *you have to level up* — minus the isekai truck.
+
 [![CI](https://github.com/PoornaSri26/solo-quest/actions/workflows/ci.yml/badge.svg)](https://github.com/PoornaSri26/solo-quest/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](server/jest.config.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB)](https://reactjs.org/)
+
+## 📑 Table of Contents
+
+- [Documentation](#-documentation)
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Testing](#-testing)
+- [Configuration](#-configuration)
+- [Monitoring](#-monitoring)
+- [Security](#-security)
+- [API Documentation](#-api-documentation)
+- [Customization](#-customization)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Monetization](#-monetization)
+- [Support](#-support)
+- [Roadmap](#-roadmap)
+
+## 🎮 Try it now
+
+```bash
+git clone https://github.com/PoornaSri26/solo-quest.git && cd solo-quest
+npm install && cd server && npm install && cp .env.example .env
+cd .. && docker compose up -d   # or: cd server && npm run dev
+```
+
+Then open the app, register a hunter, and complete your first quest — you'll be E-rank for about thirty seconds, and that's a promise.
 
 ## 📖 Documentation
 
@@ -22,6 +53,13 @@ Solo Quest is a gamified productivity application that turns your daily tasks in
 | [Deployment](./DEPLOYMENT.md) | Production, Kubernetes, Docker |
 | [Mobile](./MOBILE.md) | iOS/Android via Capacitor |
 | [Design](./DESIGN.md) | UI/UX design system |
+| [Troubleshooting](./TROUBLESHOOTING.md) | Common failure modes and fixes |
+| [Data Model](./DATA_MODEL.md) | Database schema reference (all models) |
+| [Glossary](./GLOSSARY.md) | Domain vocabulary |
+| [ADRs](./docs/adr/ADR-001-sqlite-dev-postgres-prod.md) | Architecture decision records |
+| [Threat Model](./docs/THREAT_MODEL.md) | STRIDE analysis + headers audit |
+| [Accessibility](./docs/ACCESSIBILITY.md) | Accessibility statement |
+| [Known Issues](./KNOWN_ISSUES.md) | Open issues with workarounds |
 
 ## ✨ Features
 
@@ -167,11 +205,13 @@ npm run test:watch
 ```
 
 Test coverage includes:
-- Authentication endpoints
-- Quest CRUD operations
-- Business logic security
-- Pagination functionality
-- Rate limiting
+- Authentication endpoints and GDPR account export/erasure
+- Quest CRUD operations and business logic security
+- Economy, ledger, and reconciliation integrity
+- Middleware ordering, CSRF origin validation, rate limiting, entitlements
+- PII log redaction
+
+The CI pipeline gates on build, tests, coverage thresholds (80% statements/lines/functions, 70% branches), and security scanning. Manual QA per release: [docs/QA_CHECKLIST.md](./docs/QA_CHECKLIST.md). Bug reports are triaged per [docs/BUG_TRIAGE.md](./docs/BUG_TRIAGE.md).
 
 ## 🔧 Configuration
 
@@ -186,7 +226,10 @@ REDIS_URL="redis://localhost:6379"
 PORT=5000
 LOG_LEVEL="info"
 NODE_ENV="production"
+ALLOWED_ORIGINS="http://localhost:3000,http://localhost:5173,https://soloquest.app"
 ```
+
+`server/.env.example` documents **every** variable (Stripe, Redis, CORS/CSRF origins, superadmin seeding) with requirements.
 
 ### Rate Limiting
 
@@ -241,6 +284,8 @@ Found a vulnerability? **Please don't open a public issue** — see [SECURITY.md
 - **SQL injection prevention**: Prisma ORM with parameterized queries
 - **XSS protection**: Helmet.js security headers
 - **Authentication**: JWT with secure secret management
+- **PII log redaction**: emails, JWTs, Bearer tokens, and secret-named fields are masked before anything is written to logs
+- **Automated scanning**: CI runs `npm audit` (high/critical gate) and gitleaks secret scanning on every push and weekly
 
 ### Best Practices
 
@@ -340,6 +385,8 @@ Solo Quest offers multiple subscription tiers and commercial options.
 - **Hunter Pass ($9.99/month)**: Advanced analytics, unlimited quests, custom themes, priority support
 - **Enterprise**: Custom solutions, white-label options, dedicated support
 
+Limits for each tier are enforced server-side and published in code (`server/src/entitlements.ts`) — the free tier keeps core quest/dungeon functionality usable forever; paid tiers raise caps (gates, quests per day, streak freeze tokens) rather than gating basics.
+
 ### Licensing Options
 
 - **Personal Use**: Free for individual users
@@ -354,9 +401,14 @@ For licensing inquiries, custom development, or enterprise features, please cont
 ## 📞 Support
 
 For support, feature requests, or bug reports:
-- Open an issue on GitHub
+- Open an issue on GitHub (bugs are triaged per [docs/BUG_TRIAGE.md](./docs/BUG_TRIAGE.md))
 - Email: poornasri.n24@gmail.com
 - Security vulnerabilities: see [SECURITY.md](./SECURITY.md) (do not open public issues)
+- Discord community: coming soon — GitHub issues/discussions are the active channel for now
+
+**Support SLA**: best-effort for a solo-maintained project — bug triage twice weekly, security reports acknowledged within 72 hours (see [SECURITY.md](./SECURITY.md)).
+
+If Solo Quest saves you time, consider giving the repo a ⭐ — it genuinely helps other hunters find it.
 
 ## 🗺️ Roadmap
 
@@ -372,7 +424,7 @@ For support, feature requests, or bug reports:
 - [x] Redis caching
 - [x] Comprehensive testing
 
-### Phase 3: Enhancement (Current)
+### Phase 3: Enhancement (Current — target: Q4 2026)
 - [x] Mobile app wrapper (Capacitor)
 - [x] Configurable failure penalties
 - [x] Simple Mode onboarding
@@ -381,7 +433,7 @@ For support, feature requests, or bug reports:
 - [x] Advanced analytics
 - [ ] Additional content and themes
 
-### 🗺️ Phase 4: Expansion
+### 🗺️ Phase 4: Expansion (target: H1 2027)
 - [ ] Multiplayer raids
 - [ ] Guild system
 - [ ] Marketplace
@@ -404,7 +456,7 @@ For support, feature requests, or bug reports:
 
 - **Frontend Build**: 2,756 modules, ~40s build time
 - **Backend Build**: TypeScript compilation, ~10s build time
-- **Test Suite**: 70 tests, 100% pass rate (CI-gated)
+- **Test Suite**: 159 tests across 12 suites, 100% pass rate; ~88% statement coverage (CI-gated at 80%)
 - **API Response Time**: < 100ms P99 (with caching)
 - **WebSocket Latency**: < 50ms average
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Tilt from 'react-parallax-tilt';
 import { HunterStatusBar } from './HunterStatusBar';
 import QuestCard from './QuestCard';
@@ -9,6 +10,8 @@ import MoodCheckIn from './MoodCheckIn';
 import { GateInscription } from '../sections/GateInscription';
 import { StatDashboard } from '../sections/StatDashboard';
 import { QuestLog } from '../sections/QuestLog';
+import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
+import StoryChapterBanner from './StoryChapterBanner';
 import { LoreCompendium } from '../sections/LoreCompendium';
 import { Leaderboard } from '../sections/Leaderboard';
 import { Forge } from '../sections/Forge';
@@ -20,6 +23,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const {
     activeQuests,
     fetchHunter,
@@ -113,20 +117,25 @@ const Dashboard: React.FC = () => {
   const isIdleState = sortedActiveQuests.length === 0 && new Date().getHours() >= 12;
 
   return (
-    <main className={`flex-1 p-4 md:p-6 overflow-y-auto ${isIdleState ? 'opacity-75' : ''}`}>
+    <main className={`relative flex-1 p-4 md:p-6 overflow-y-auto ${isIdleState ? 'opacity-75' : ''}`}>
+      {/* Ambient background layer (Originkit free tier, classic profile) */}
+      {/* fixed: main is the scroll container, so the field must stay viewport-anchored */}
+      <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={120} linkDistance={95} speed={0.45} dotSize={1.2} style={{ position: 'fixed' }} />
+      <div className="relative z-10">
       {/* Minimal Mode - Calm, focused view */}
       {uiMode === 'minimal' && (
         <div className="max-w-3xl mx-auto">
           <HunterStatusBar />
+          <StoryChapterBanner />
           
           {/* Idle State Warning */}
           {isIdleState && (
             <div className="flex flex-col items-center justify-center py-12">
               <div className="font-system text-text-system bg-surface border-l-4 border-gold-primary border-r-0 border-t-0 border-b-0 px-6 py-4 mb-6">
-                [System: No active quests. The Shadow stirs.]
+                <TypeSequence text="[System: No active quests. The Shadow stirs.]" />
               </div>
               <button
-                onClick={() => {/* Open quest creation modal */}}
+                onClick={() => navigate('/quests')}
                 className="px-4 py-2 bg-gold-primary text-void hover:bg-gold-primary/90 rounded-sm transition-fast font-display"
               >
                 Register a quest
@@ -170,18 +179,19 @@ const Dashboard: React.FC = () => {
 
       {/* Dense Mode - Full hunter dashboard */}
       {uiMode === 'dense' && (
-        <>
+        <div className="relative z-10">
           {/* Hunter Status Bar */}
           <HunterStatusBar />
+          <StoryChapterBanner />
 
           {/* Idle State Warning */}
           {isIdleState && (
             <div className="flex flex-col items-center justify-center py-12">
               <div className="font-system text-text-system bg-surface border-l-4 border-gold-primary border-r-0 border-t-0 border-b-0 px-6 py-4 mb-6">
-                [System: No active quests. The Shadow stirs.]
+                <TypeSequence text="[System: No active quests. The Shadow stirs.]" />
               </div>
               <button
-                onClick={() => {/* Open quest creation modal */}}
+                onClick={() => navigate('/quests')}
                 className="px-4 py-2 bg-gold-primary text-void hover:bg-gold-primary/90 rounded-sm transition-fast font-display"
               >
                 Register a quest
@@ -302,8 +312,9 @@ const Dashboard: React.FC = () => {
 
       {/* Quick Capture */}
       <QuickCapture />
-        </>
+      </div>
       )}
+      </div>
     </main>
   );
 };

@@ -13,23 +13,21 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16ch';
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'file:./test.db';
 
-jest.mock('../src/env', () => ({
-  env: {
-    NODE_ENV: 'test',
-    PORT: '5000',
-    DATABASE_URL: 'file:./test.db',
-    JWT_SECRET: 'test-secret-at-least-16ch',
-    LOG_LEVEL: 'error',
-    FRONTEND_URL: 'http://localhost:5173',
-    ALLOWED_ORIGINS: 'http://localhost:3000,http://localhost:5173,http://localhost:5000,http://localhost',
-  },
-  allowedOrigins: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://localhost:5000',
-    'http://localhost',
-  ],
-}));
+// Use the REAL env module with the shared origin allowlist (ALLOWED_ORIGINS
+// plus localhost-on-any-port in dev/test, per ADR-003). A hand-written mock
+// must never drift from env.ts — omitting isOriginAllowed (which index.ts
+// uses for CORS and csrf.ts for CSRF) turns every request into a 500, which
+// is exactly the drift this suite hit when isOriginAllowed was introduced.
+// Env vars are seeded inside the factory because jest.mock factories run at
+// first require — before this file's top-of-body statements execute.
+jest.mock('../src/env', () => {
+  process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-16ch';
+  process.env.DATABASE_URL = process.env.DATABASE_URL || 'file:./test.db';
+  process.env.ALLOWED_ORIGINS =
+    'http://localhost:3000,http://localhost:5173,http://localhost:5000,http://localhost';
+  return jest.requireActual('../src/env');
+});
 
 import request from 'supertest';
 import app from '../src/index';

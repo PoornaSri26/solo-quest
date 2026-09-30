@@ -420,7 +420,11 @@ const AdminDashboardPage: React.FC = () => {
                             <div>
                               <div className="text-text-primary flex items-center gap-1.5">
                                 {u.displayName}
-                                {u.role === 'SUPERADMIN' && <ShieldCheck className="w-3.5 h-3.5 text-gold-primary" title="Superadmin" />}
+                                {u.role === 'SUPERADMIN' && (
+                                  <span title="Superadmin">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-gold-primary" aria-label="Superadmin" />
+                                  </span>
+                                )}
                               </div>
                               <div className="text-xs text-text-muted">{u.email}</div>
                               <div className="text-xs text-text-muted">{u.hunterId}</div>

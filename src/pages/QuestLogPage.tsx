@@ -3,6 +3,8 @@ import { useStore } from '../store/useStore';
 import QuestCard from '../components/QuestCard';
 import { Plus } from 'lucide-react';
 import type { QuestCategory } from '../shared/types';
+import { VoidDrift } from '../components/originkit/ui/ambient-void';
+import SystemPageHeader from '../components/SystemPageHeader';
 
 const QuestLogPage: React.FC = () => {
   const {
@@ -17,9 +19,11 @@ const QuestLogPage: React.FC = () => {
   const [newQuestRank, setNewQuestRank] = useState<'E' | 'D' | 'C' | 'B' | 'A' | 'S'>('E');
   const [newQuestCategory, setNewQuestCategory] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchQuests();
+    setIsLoading(true);
+    fetchQuests().finally(() => setIsLoading(false));
   }, [fetchQuests]);
 
   const handleCreateQuest = async (e: React.FormEvent) => {
@@ -43,9 +47,17 @@ const QuestLogPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-display text-text-primary mb-6">Quest Log</h1>
+    <div className="relative p-6 min-h-screen bg-void">
+      <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={115} linkDistance={100} speed={0.55} />
+      <div className="relative z-10">
+      <SystemPageHeader title="Quest Log" systemLine="Quest registry synchronized. The ledger awaits entries." />
 
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-gold-primary border-t-transparent"></div>
+        </div>
+      ) : (
+        <>
       {/* Inline Quest Creation Form */}
       <div className="bg-raised border border-border-subtle rounded-md p-6 mb-8">
         <h2 className="text-lg font-display mb-4 text-text-primary">Create New Quest</h2>
@@ -174,6 +186,9 @@ const QuestLogPage: React.FC = () => {
             </div>
           )}
         </div>
+      </div>
+        </>
+      )}
       </div>
     </div>
   );

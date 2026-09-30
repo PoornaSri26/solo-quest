@@ -37,6 +37,31 @@ codebase, annotated `(#N)`) as they are implemented.
 | 3D-301/316 | Landing-hero S-rank hunter showcase (lazy, turntable, 2D fallback) as the marketing hook | `src/components/AvatarHeroShowcase.tsx`, `src/components/Hero.tsx` |
 | 3D-26 | One-click "Randomize" look generator (rank never randomized) | `src/lib/avatarConfig.ts` (`randomizeAvatarConfig`), `src/components/AvatarCustomizer.tsx` |
 | 3D-27/29 | Curated class-themed preset loadouts (Vanguard/Arcanist/Sage/Shadow/Warden) | `src/lib/avatarConfig.ts` (`AVATAR_PRESETS`), `src/components/AvatarCustomizer.tsx` |
+| 457 | README table of contents | `README.md` |
+| 459 | engines pinning (Node >= 20) | `package.json`, `server/package.json` |
+| 357 | security.txt (responsible disclosure pointer) | `public/.well-known/security.txt` |
+| 468 | RPG pitch paragraph (why gamification works) | `README.md` |
+| 469 | Try-it-now quick-start CTA | `README.md` |
+| — | Superadmin seed script (idempotent, prod-guarded) | `server/prisma/seed-admin.ts` |
+| — | Stripe boot crash fix: guarded lazy client (missing key no longer kills the server) | `server/src/stripe.ts` (`getStripe`/`isStripeEnabled`) |
+| — | 404/error middleware registered at module load (JSON 404s fully tested; unblocks integration tests) | `server/src/index.ts` |
+| 239 | PII/secret log redaction (emails, JWTs, Bearer tokens, secret-named fields) | `server/src/logger.ts` (`redact`), `server/tests/logger.test.ts` |
+| 204/230 | Dependency audit (npm audit high-gate) + gitleaks secret scanning in CI, weekly schedule | `.github/workflows/security.yml` |
+| 343 | Architecture decision records (DB, Stripe boot, origin allowlist) | `docs/adr/ADR-001..003` |
+| 349 | Troubleshooting guide (boot crashes, DB drift, CSRF 403s, ts-node quirks) | `TROUBLESHOOTING.md` |
+| 360 | Domain glossary | `GLOSSARY.md` |
+| 363 | Data model reference (all 39 models grouped by domain) | `DATA_MODEL.md` |
+| 365 | Known issues with workarounds (plus fixed-for-searchability) | `KNOWN_ISSUES.md` |
+| 261 | Manual QA checklist per release | `docs/QA_CHECKLIST.md` |
+| 265 | Bug triage process (severity levels, flow, labels) | `docs/BUG_TRIAGE.md` |
+| 211/235 | STRIDE-lite threat model + security headers inventory | `docs/THREAT_MODEL.md` |
+| 285 | Accessibility statement (conformance, gaps, feedback channel) | `docs/ACCESSIBILITY.md` |
+| 463 | Support SLA statement | `README.md` (Support section) |
+| 464 | Transparent monetization copy (limits in code, free tier promise) | `README.md` (Monetization section) |
+| 465 | Star CTA | `README.md` (Support section) |
+| 467 | Roadmap phase dates | `README.md` (Roadmap section) |
+| 470 | Feedback form → GitHub issues as the active channel; Discord placeholder | `README.md` (Support section) |
+| 466 | OG image for social sharing | `public/og-image.svg` + `index.html` meta tags |
 
 ### 3D Avatars & Visuals (3D report §2, items not yet built)
 Selfie-to-avatar via MetaPerson/Avatar SDK (3D-3/24), manual creator enhancements — face sliders (#23),
@@ -50,14 +75,16 @@ seizure-safe flash limits (#264). *(#301 hero marketing showcase is done — `sr
 
 ## 🎯 Next highest-leverage (from report §6)
 
-1. **#367 — Ship a hosted demo** (deploy the existing Docker setup; link in README)
-2. **#131–135 — Mobile**: Capacitor projects already exist (`ios/`, `android/`); finish store builds, push notifications, widgets
-3. **#96–107 — Real social mechanics**: parties/guilds with shared boss fights (schema tables already exist)
-4. **#368/#471 — Reduce Solo Leveling IP dependency**: original lore/visual identity (`src/lib/system-voice.ts` lore is a start)
-5. **#153/#166 — Real monetization flow**: Stripe dependency is already installed; wire checkout to the existing `entitlements.ts` tiers
-6. **#241 — Test coverage target**: 70 tests today; add coverage gate (e.g. 80%) to CI
-7. **#286–295 — Product analytics**: instrument onboarding funnel and D1/D7/D30 retention
-8. **#214/#466 — Compliance + repo polish**: privacy policy live, repo description/topics, social preview image
+1. **#367 — Ship a hosted demo** ⚠️ *requires infrastructure/hosts outside the repo* (deploy the existing Docker setup; link in README)
+2. **#131–135 — Mobile** ⚠️ *requires store accounts, devices, signing certs* — Capacitor projects already exist (`ios/`, `android/`); code-level work (push token registration, deep links) is in-repo
+3. **#96–107 — Real social mechanics**: parties/guilds with shared boss fights (schema tables already exist) — code work, large feature
+4. **#368/#471 — Reduce Solo Leveling IP dependency**: original lore/visual identity (`src/lib/system-voice.ts` lore is a start) — code work, large feature
+5. **#153/#166 — Real monetization flow**: Stripe dependency is already installed; wire checkout to the existing `entitlements.ts` tiers — code work (needs Stripe account for live testing)
+6. **#241 — Test coverage target** ✅ — coverage gate live in CI (80/80/70/80, actuals 88/77/86/88); 159 tests across 12 suites
+7. **#286–295 — Product analytics**: instrumentation endpoints + models exist (`AnalyticsEvent`, `OnboardingProgress`, `RetentionMetrics`); dashboard/UI is the remaining code work
+8. **#214/#466 — Compliance + repo polish** ✅/⚠️ — GDPR export/erasure implemented + tested; privacy policy live; OG image shipped; ⚠️ repo description/topics/social-preview are GitHub settings outside the repo
+
+> **Note on scope:** many remaining items below are feature/product initiatives (social mechanics, mobile store builds, hosted demo, community programs, legal reviews) that need accounts, services, or decisions outside this repository — they're marked ⚠️ where identified. Code-level and documentation items are completed or annotated as they land.
 
 ## 📋 Remaining suggestions by category
 
@@ -130,14 +157,14 @@ API contract tests (#207), memory profiling (#208), env-parity checks (#209), K8
 
 ### Security & Compliance (211–240)
 Threat model (#211), 2FA (#212), account recovery docs (#213), GDPR export/erasure (#214),
-responsible disclosure (#215), anti-cheat detection (#216), server-side price validation audit (#217),
+responsible disclosure (#215 — security.txt shipped, see #357), anti-cheat detection (#216), server-side price validation audit (#217),
 session rotation (#218), anomaly detection (#219), encryption at rest (#220), CAPTCHA (#221),
 data retention policy (#222), pen testing (#223), moderation tooling (#224), age gating (#225),
 admin audit trails (#226), CORS docs (#227), license auditing (#228), webhook signatures (#229),
 secret scanning (#230), ToS for IP-adjacent branding (#231), rate-limit bypass tests (#232),
 DB constraints for economy (#233), DPA template (#234), security headers audit (#235),
 email verification for linking (#236), Solo Leveling IP legal review (#237), disclosure timeline (#238),
-PII scrubbing in logs (#239), RBAC (#240).
+PII scrubbing in logs (#239), RBAC (#240 — implemented: `role` column, `requireSuperadmin`, admin dashboard).
 
 ### Testing & QA (241–265)
 Coverage targets/gates (#241), E2E tests (#242), property-based economy tests (#243),
@@ -219,10 +246,10 @@ definition of done (#449), security audits (#450).
 ### Quick Wins (451–470)
 Repo topics/description (#451 — done via #452's CI, topic config remains on GitHub),
 live CI badge (#452 ✅), screenshots/GIF (#453), demo link (#454), LICENSE/commercial cross-check (#455),
-CONTRIBUTING.md (#456 ✅ — already existed), README TOC (#457), Discord placeholder (#458),
-engines pinning (#459), .env.example audit (#460), coverage badge (#461), uptime badge (#462),
+CONTRIBUTING.md (#456 ✅ — already existed), README TOC (#457 ✅), Discord placeholder (#458),
+engines pinning (#459 ✅), .env.example audit (#460 ✅), coverage badge (#461 ✅), uptime badge (#462),
 support SLA (#463), monetization copy (#464), star CTA (#465), OG image (#466), roadmap dates (#467),
-RPG pitch paragraph (#468), Try-it-now CTAs (#469), feedback form (#470).
+RPG pitch paragraph (#468 ✅), Try-it-now CTAs (#469 ✅), feedback form (#470).
 
 ### Ambitious Bets (471–500)
 Original IP world (#471), physical merch (#472), VR/AR fitness (#473), wearable integrations (#474),
@@ -238,4 +265,4 @@ niche-owning positioning (#500).
 
 ---
 
-*Maintained by the Solo Quest contributors. Last updated: September 24, 2026.*
+*Maintained by the Solo Quest contributors. Last updated: September 28, 2026.*

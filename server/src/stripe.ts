@@ -5,15 +5,48 @@ import { env } from './env';
 
 const prisma = new PrismaClient();
 
-// Initialize Stripe
-let stripe: Stripe;
-try {
-  stripe = new Stripe(env.STRIPE_SECRET_KEY || '', {
-    apiVersion: '2024-06-20' as any,
-  });
-} catch (error) {
-  logger.warn('Stripe not initialized (missing STRIPE_SECRET_KEY), payment features will be disabled');
-  stripe = null as any;
+// Initialize Stripe lazily and safely: `new Stripe('')` throws an
+// uncaughtException at import time when STRIPE_SECRET_KEY is unset, which
+// crashed the whole server on dev machines (fix: guarded singleton).
+let stripeInstance: Stripe | null = null;
+let stripeInitAttempted = false;
+
+function initStripe(): Stripe | null {
+  if (stripeInitAttempted) return stripeInstance;
+  stripeInitAttempted = true;
+  if (!env.STRIPE_SECRET_KEY) {
+    logger.warn('Stripe not initialized (missing STRIPE_SECRET_KEY), payment features will be disabled');
+    return null;
+  }
+  try {
+    stripeInstance = new Stripe(env.STRIPE_SECRET_KEY, {
+      apiVersion: '2024-06-20' as any,
+    });
+  } catch (error) {
+    logger.warn('Stripe initialization failed, payment features will be disabled:', error);
+    stripeInstance = null;
+  }
+  return stripeInstance;
+}
+
+/** Returns the Stripe client, or null when Stripe is not configured. */
+export function getStripe(): Stripe | null {
+  return initStripe();
+}
+
+const stripe = new Proxy({} as Stripe, {
+  get(_t, prop) {
+    const client = initStripe();
+    if (!client) {
+      throw new Error('Stripe is not configured: set STRIPE_SECRET_KEY');
+    }
+    return (client as any)[prop];
+  },
+}) as Stripe;
+
+/** True when Stripe is configured and usable. */
+export function isStripeEnabled(): boolean {
+  return initStripe() !== null;
 }
 
 // Subscription plans configuration
@@ -65,7 +98,7 @@ const SUBSCRIPTION_PLANS = {
  * Create a Stripe customer for a user
  */
 export async function createStripeCustomer(userId: string, email: string, displayName: string) {
-  if (!stripe) {
+  if (!isStripeEnabled()) {
     throw new Error('Stripe not initialized');
   }
 
@@ -100,7 +133,7 @@ export async function createCheckoutSession(
   plan: 'hunter_pass' | 'guild',
   billingCycle: 'monthly' | 'yearly'
 ) {
-  if (!stripe) {
+  if (!isStripeEnabled()) {
     throw new Error('Stripe not initialized');
   }
 
@@ -169,7 +202,7 @@ export async function createCheckoutSession(
  * Handle Stripe webhook events
  */
 export async function handleWebhook(event: Stripe.Event) {
-  if (!stripe) {
+  if (!isStripeEnabled()) {
     throw new Error('Stripe not initialized');
   }
 
@@ -395,7 +428,7 @@ export async function getUserSubscription(userId: string) {
  * Cancel user's subscription
  */
 export async function cancelSubscription(userId: string) {
-  if (!stripe) {
+  if (!isStripeEnabled()) {
     throw new Error('Stripe not initialized');
   }
 
