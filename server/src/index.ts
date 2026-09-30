@@ -209,6 +209,110 @@ const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
 ];
 const BOSS_STRIKE_WINDOW_DAYS = 7; // completions older than this cannot fuel strikes
 
+// Strike damage derives from quest rank (E=1 … S=6 → 100–600 HP), never client input.
+const BOSS_RANK_DAMAGE: Record<string, number> = { E: 1, D: 2, C: 3, B: 4, A: 5, S: 6 };
+const bossStrikeDamage = (rank: string): bigint =>
+  BigInt(BOSS_RANK_DAMAGE[rank] ?? 1) * BigInt(100);
+
+/**
+ * Attempt one boss strike for a completed quest (#96).
+ *
+ * Shared by POST /api/guilds/boss/strike (explicit) and the automatic hook
+ * that runs after every verified quest completion. All-or-nothing:
+ *  - 'no-guild' | 'no-boss'      → nothing happened, no state changed
+ *  - 'ineligible'                → quest cannot strike (bad status/owner/age/reuse)
+ *  - 'duplicate'                 → this quest already fueled a strike
+ *  - { defeated, damage, ... }   → strike landed (boss state already persisted)
+ *
+ * Uses its own prisma client (not a tx) so callers can invoke it after their
+ * reward transaction has committed.
+ */
+async function attemptBossStrike(
+  userId: string,
+  questId: string
+): Promise<
+  | { outcome: 'no-guild' | 'no-boss' | 'ineligible' | 'duplicate' }
+  | { outcome: 'struck'; damage: string; hpRemaining: string; defeated: boolean; bossName: string; bossTier: number; guildId: string }
+> {
+  const socialStats = await withRetry(() => prisma.socialStats.findUnique({ where: { userId } }));
+  if (!socialStats?.guildId) return { outcome: 'no-guild' };
+  const guildId: string = socialStats.guildId;
+
+  const strikeCutoff = new Date();
+  strikeCutoff.setDate(strikeCutoff.getDate() - BOSS_STRIKE_WINDOW_DAYS);
+
+  const quest = await withRetry(() => prisma.quest.findUnique({ where: { id: questId } }));
+  if (
+    !quest ||
+    quest.userId !== userId ||
+    quest.deletedAt !== null ||
+    quest.status !== 'COMPLETED' ||
+    !quest.completedAt ||
+    quest.completedAt < strikeCutoff ||
+    quest.bossStrikeUsed
+  ) {
+    return { outcome: 'ineligible' };
+  }
+
+  const boss = await withRetry(() =>
+    prisma.raid.findFirst({
+      where: { guildId, isBoss: true, status: 'ACTIVE' },
+      include: { participants: true },
+    })
+  );
+  if (!boss) return { outcome: 'no-boss' };
+
+  const damage = bossStrikeDamage(quest.rank);
+
+  const result = await withRetry(() =>
+    prisma.$transaction(async (tx) => {
+      // Claim the quest's strike atomically (guards concurrent/duplicate strikes).
+      const claimed = await tx.quest.updateMany({
+        where: { id: quest.id, bossStrikeUsed: false },
+        data: { bossStrikeUsed: true },
+      });
+      if (claimed.count === 0) {
+        return { duplicate: true as const };
+      }
+
+      // Ensure the striker is a participant (idempotent upsert).
+      await tx.raidParticipant.upsert({
+        where: { raidId_userId: { raidId: boss.id, userId } },
+        create: { raidId: boss.id, userId, expContributed: damage },
+        update: { expContributed: { increment: damage }, lastActiveAt: new Date() },
+      });
+
+      const updated = await tx.raid.update({
+        where: { id: boss.id },
+        data: { progressExp: { increment: damage } },
+      });
+
+      const hp = updated.targetExp;
+      const dealt = updated.progressExp;
+      const defeated = dealt >= hp;
+
+      if (defeated) {
+        await tx.raid.update({
+          where: { id: boss.id },
+          data: { status: 'COMPLETED', endDate: new Date(), progressExp: hp },
+        });
+      }
+
+      return {
+        duplicate: false as const,
+        damage: damage.toString(),
+        hpRemaining: (hp > dealt ? hp - dealt : BigInt(0)).toString(),
+        defeated,
+        bossName: updated.name,
+        bossTier: updated.bossTier,
+      };
+    })
+  );
+
+  if (result.duplicate) return { outcome: 'duplicate' };
+  return { outcome: 'struck', ...result, guildId };
+}
+
 const emitToUser = (userId: string, event: string, data: any) => {
   io.to(`user:${userId}`).emit(event, data);
 };
@@ -3001,6 +3105,40 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
     }
 
     emitToUser(userId, 'quest:updated', quest);
+
+    // Guild boss auto-strike (#96): a fresh completion automatically lands one
+    // strike on the guild's active boss — no manual quest-ID input needed.
+    // Runs after the reward transaction committed; the shared helper re-checks
+    // eligibility atomically, so this is safe on replays and double calls.
+    if (status === 'COMPLETED' && existingQuest.status !== 'COMPLETED' && quest) {
+      try {
+        const strike = await attemptBossStrike(userId, quest.id);
+        if (strike.outcome === 'struck') {
+          emitToUser(userId, 'boss:updated', {
+            bossId: undefined,
+            damage: strike.damage,
+            hpRemaining: strike.hpRemaining,
+            defeated: strike.defeated,
+            by: userId,
+          });
+          const notif = await withRetry(() => prisma.notification.create({
+            data: {
+              userId,
+              message: strike.defeated
+                ? `${strike.bossName} has been defeated! Your guild brought it down.`
+                : `Your strike hit ${strike.bossName} for ${strike.damage} damage (${strike.hpRemaining} HP remaining).`,
+              type: 'BOSS',
+            },
+          }));
+          emitToUser(userId, 'notification:new', notif);
+        }
+        // Other outcomes (no guild / no boss / stale quest) are silently fine:
+        // completion must always succeed regardless of boss state.
+      } catch (strikeError) {
+        // A boss-strike failure must never fail the quest completion.
+        logger.error('Auto boss strike error:', strikeError);
+      }
+    }
 
     // Record the completion response for idempotent replay if a key was sent
     await captureIdempotentResponse(req, res, quest);
@@ -5880,11 +6018,28 @@ const startServer = async () => {
           prisma.raid.findFirst({
             where: { guildId, isBoss: true, status: 'ACTIVE' },
             orderBy: { startDate: 'desc' },
-            include: { participants: { orderBy: { expContributed: 'desc' } } },
+            include: {
+              participants: {
+                orderBy: { expContributed: 'desc' },
+                take: 10, // leaderboard: top damage dealers
+              },
+            },
           })
         );
 
         if (!boss) return res.json({ boss: null });
+
+        // Resolve display names for the top-damage leaderboard.
+        const participantUserIds = boss.participants.map((p) => p.userId);
+        const users = participantUserIds.length
+          ? await withRetry(() =>
+              prisma.user.findMany({
+                where: { id: { in: participantUserIds } },
+                select: { id: true, displayName: true, hunterId: true },
+              })
+            )
+          : [];
+        const nameById = new Map(users.map((u) => [u.id, u.displayName || u.hunterId || 'Hunter']));
 
         const hp = boss.targetExp;
         const damage = boss.progressExp;
@@ -5895,7 +6050,15 @@ const startServer = async () => {
           hpRemaining: (hp > damage ? hp - damage : BigInt(0)).toString(),
           percent: Number((damage * BigInt(10000)) / hp) / 100,
           me: boss.participants.find((p) => p.userId === userId)?.expContributed.toString() ?? '0',
-          // BigInt fields are stringified via the toJSON patch; participants included
+          // Top damage dealers for the fight leaderboard (expContributed is BigInt → string via toJSON patch)
+          leaderboard: boss.participants.map((p, i) => ({
+            rank: i + 1,
+            userId: p.userId,
+            displayName: nameById.get(p.userId) ?? 'Hunter',
+            damage: p.expContributed.toString(),
+            isMe: p.userId === userId,
+          })),
+          participantCount: participantUserIds.length,
         });
       } catch (error) {
         logger.error('Get current boss error:', error);
@@ -5971,6 +6134,8 @@ const startServer = async () => {
      *     security:
      *       - bearerAuth: []
      */
+    // Explicit strike endpoint: kept for API completeness and tests — the UI
+    // path is automatic (attemptBossStrike fires on quest completion).
     app.post('/api/guilds/boss/strike', authenticateToken, async (req, res) => {
       try {
         const userId = getUserId(req);
@@ -5983,27 +6148,8 @@ const startServer = async () => {
         if (!socialStats?.guildId) {
           return res.status(403).json({ error: 'You must be in a guild to fight bosses' });
         }
+        const guildId: string = socialStats.guildId;
 
-        // Server-verified damage: the quest must belong to the caller, be
-        // COMPLETED, recent, and not have fueled a strike before.
-        const quest = await withRetry(() =>
-          prisma.quest.findUnique({ where: { id: questId } })
-        );
-        const strikeCutoff = new Date();
-        strikeCutoff.setDate(strikeCutoff.getDate() - BOSS_STRIKE_WINDOW_DAYS);
-        if (
-          !quest ||
-          quest.userId !== userId ||
-          quest.deletedAt !== null ||
-          quest.status !== 'COMPLETED' ||
-          !quest.completedAt ||
-          quest.completedAt < strikeCutoff ||
-          quest.bossStrikeUsed
-        ) {
-          return res.status(400).json({ error: 'Quest is not eligible for a strike' });
-        }
-
-        const guildId = socialStats.guildId;
         const boss = await withRetry(() =>
           prisma.raid.findFirst({
             where: { guildId, isBoss: true, status: 'ACTIVE' },
@@ -6014,57 +6160,16 @@ const startServer = async () => {
           return res.status(404).json({ error: 'No active boss for your guild' });
         }
 
-        // Strike damage scales with quest rank (E=1 … S=6), not with client input.
-        const rankDamage: Record<string, number> = { E: 1, D: 2, C: 3, B: 4, A: 5, S: 6 };
-        const damage = BigInt(rankDamage[quest.rank] ?? 1) * BigInt(100);
-
-        const result = await withRetry(() =>
-          prisma.$transaction(async (tx) => {
-            // Claim the quest's strike atomically (guards concurrent/duplicate strikes).
-            const claimed = await tx.quest.updateMany({
-              where: { id: quest.id, bossStrikeUsed: false },
-              data: { bossStrikeUsed: true },
-            });
-            if (claimed.count === 0) {
-              return { duplicate: true as const };
-            }
-
-            // Ensure the striker is a participant (idempotent upsert).
-            await tx.raidParticipant.upsert({
-              where: { raidId_userId: { raidId: boss.id, userId } },
-              create: { raidId: boss.id, userId, expContributed: damage },
-              update: { expContributed: { increment: damage }, lastActiveAt: new Date() },
-            });
-
-            const updated = await tx.raid.update({
-              where: { id: boss.id },
-              data: { progressExp: { increment: damage } },
-            });
-
-            const hp = updated.targetExp;
-            const dealt = updated.progressExp;
-            const defeated = dealt >= hp;
-
-            if (defeated) {
-              await tx.raid.update({
-                where: { id: boss.id },
-                data: { status: 'COMPLETED', endDate: new Date(), progressExp: hp },
-              });
-            }
-
-            return {
-              duplicate: false as const,
-              damage: damage.toString(),
-              hpRemaining: (hp > dealt ? hp - dealt : BigInt(0)).toString(),
-              defeated,
-              bossName: updated.name,
-              bossTier: updated.bossTier,
-            };
-          })
-        );
-
-        if (result.duplicate) {
-          return res.status(409).json({ error: 'This quest already fueled a strike' });
+        const result = await attemptBossStrike(userId, questId);
+        if (result.outcome !== 'struck') {
+          const statusByOutcome = {
+            'no-guild': [403, 'You must be in a guild to fight bosses'],
+            'no-boss': [404, 'No active boss for your guild'],
+            'ineligible': [400, 'Quest is not eligible for a strike'],
+            'duplicate': [409, 'This quest already fueled a strike'],
+          } as const;
+          const [code, message] = statusByOutcome[result.outcome];
+          return res.status(code).json({ error: message });
         }
 
         // Real-time updates to every participant.

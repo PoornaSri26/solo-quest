@@ -241,8 +241,8 @@ const MilestoneTracker: React.FC = () => {
                   )}
                 </div>
               </div>
-            </Card>
-          </div>
+            </div>
+          </Card>
         ))}
       </div>
 

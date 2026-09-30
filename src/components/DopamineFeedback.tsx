@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useStore } from '../store/useStore';
 
 interface FeedbackEvent {
   type: 'quest_complete' | 'level_up' | 'streak' | 'combo' | 'mastery';
@@ -20,7 +19,7 @@ export default function DopamineFeedback() {
   const triggerFeedback = (event: FeedbackEvent) => {
     setFeedback(event);
     setShow(true);
-    
+
     // Generate particles
     const newParticles = Array.from({ length: 30 }, (_, i) => ({
       id: Date.now() + i,
@@ -32,7 +31,11 @@ export default function DopamineFeedback() {
     setTimeout(() => setShow(false), 2000);
   };
 
-  // Listen for store events (would need to wire this up in the store)
+  // Expose the trigger to the module-level hook below so external callers
+  // (store subscriptions, dev tools) can fire feedback events.
+  (window as any).__dopamineFeedback = triggerFeedback;
+
+  // Wire-up hook for future store integration (see useDopamineFeedback below).
   useEffect(() => {
     // This would be triggered by store events
     // For now, it's a component that can be called manually
