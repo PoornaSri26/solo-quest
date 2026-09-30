@@ -2312,6 +2312,59 @@ app.get('/api/hunter/me', authenticateToken, async (req, res) => {
   }
 });
 
+// Hunter log heatmap (#30): per-day quest completion counts for the last year.
+// Uses the existing @@index([userId, completedAt]) — no scan of the quest table body.
+app.get('/api/hunter/activity-log', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const cacheKey = `activity-log:${userId}`;
+
+    const cached = await getFromCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - 364); // 365 calendar days including today
+
+    const grouped = await withRetry(() =>
+      prisma.quest.groupBy({
+        by: ['completedAt'],
+        where: {
+          userId,
+          status: 'COMPLETED',
+          completedAt: { gte: since, not: null },
+          deletedAt: null,
+        },
+        _count: { _all: true },
+      })
+    );
+
+    // SQLite stores timestamps with ms precision — normalize each completion to
+    // its local calendar day (UTC-agnostic: client renders its own local grid).
+    const byDay = new Map<string, number>();
+    for (const row of grouped) {
+      const d = row.completedAt;
+      if (!d) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      byDay.set(key, (byDay.get(key) ?? 0) + row._count._all);
+    }
+
+    const response = {
+      days: Array.from(byDay.entries()).map(([date, count]) => ({ date, count })),
+      generatedAt: new Date().toISOString(),
+    };
+
+    // Hourly cache: the log only changes when a quest completes.
+    await setCache(cacheKey, response, 60 * 60 * 1000);
+    res.json(response);
+  } catch (error) {
+    logger.error('Activity log error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.patch('/api/hunter/me', authenticateToken, async (req, res) => {
   try {
     const userId = getUserId(req);

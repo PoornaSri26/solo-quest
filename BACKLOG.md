@@ -63,6 +63,7 @@ codebase, annotated `(#N)`) as they are implemented.
 | 470 | Feedback form → GitHub issues as the active channel; Discord placeholder | `README.md` (Support section) |
 | 466 | OG image for social sharing | `public/og-image.svg` + `index.html` meta tags |
 | 421 | Offline feedback: connection banner while realtime sync is down | `src/components/ConnectionBanner.tsx` |
+| 30 | Hunter log heatmap: 53-week completion grid with streaks on the dashboard | `src/components/HunterLogHeatmap.tsx`, `server/src/index.ts` (`/api/hunter/activity-log`) |
 | 200 | WS reconnect with bounded attempts + backoff (socket.io reconnection config) | `src/lib/socket.ts` |
 
 ### 3D Avatars & Visuals (3D report §2, items not yet built)

@@ -16,6 +16,7 @@ import { LoreCompendium } from '../sections/LoreCompendium';
 import { Leaderboard } from '../sections/Leaderboard';
 import { Forge } from '../sections/Forge';
 import ResourceActions from './ResourceActions';
+import HunterLogHeatmap from './HunterLogHeatmap';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -174,6 +175,14 @@ const Dashboard: React.FC = () => {
           <div className="mt-8">
             <MoodCheckIn />
           </div>
+
+          {/* Hunter Log Heatmap (#30) */}
+          <section className="mt-8 bg-surface border border-border-subtle rounded-md p-6 hover:border-gold-dim transition-fast">
+            <h2 className="mb-4 text-lg font-display flex items-center gap-2 text-text-primary">
+              <span aria-hidden="true">🗓️</span> Hunter Log
+            </h2>
+            <HunterLogHeatmap />
+          </section>
         </div>
       )}
 
@@ -267,6 +276,14 @@ const Dashboard: React.FC = () => {
             <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg, #a594f5, #fff)' }}>Quick Stats</span>
           </h2>
           <StatDashboard />
+
+          {/* Hunter Log Heatmap (#30) */}
+          <div className="mt-6 pt-6 border-t border-border-subtle">
+            <h3 className="mb-4 text-sm font-display flex items-center gap-2 text-text-primary">
+              <span aria-hidden="true">🗓️</span> Hunter Log
+            </h3>
+            <HunterLogHeatmap />
+          </div>
         </section>
         </Tilt>
 

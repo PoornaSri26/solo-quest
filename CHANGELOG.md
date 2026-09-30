@@ -5,6 +5,7 @@ All notable changes to Solo Quest are documented in this file. The format is bas
 ## [Unreleased]
 
 ### Added
+- Hunter log heatmap (#30): GitHub-style 53-week grid of daily quest completions on the dashboard, with month labels, tooltips, current/best streaks, and a yearly total. Backed by `GET /api/hunter/activity-log` (day-bucketed `groupBy` over `completedAt`, hourly cache).
 - Offline connection indicator (#421): a fixed banner shows while the realtime socket is disconnected or reconnecting, so users know stats/quest sync may be stale.
 
 ### Fixed
