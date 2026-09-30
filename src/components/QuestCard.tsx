@@ -7,6 +7,7 @@ import { format, isToday, isTomorrow, isYesterday, parseISO } from 'date-fns';
 import QuestDecision from './QuestDecision';
 import { createAuthApi } from '../lib/api';
 import { Card } from './ui/Card';
+import { ProgressBar } from './ui/ProgressBar';
 
 const isPastDate = (date: Date) => {
   const now = new Date();
@@ -435,8 +436,8 @@ const QuestCard: React.FC<{
 
         {/* Progress bar for in_progress quests */}
         {quest.status === 'IN_PROGRESS' && (
-          <div className="mt-3 w-full bg-gold-dim rounded-sm h-1">
-            <div className="bg-gold-primary h-1 rounded-sm transition-slow" style={{ width: '60%' }}></div>
+          <div className="mt-3">
+            <ProgressBar value={60} variant="gold" size="sm" />
           </div>
         )}
       </Card>
