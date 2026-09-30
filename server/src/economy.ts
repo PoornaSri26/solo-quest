@@ -433,6 +433,7 @@ export type LedgerReason =
   | 'QUEST_PACK_PURCHASE'
   | 'TIERED_COMPLETION'
   | 'DUNGEON_REWARD'
+  | 'BOSS_VICTORY'
   | 'ADJUSTMENT';
 
 export interface LedgerEntryInput {

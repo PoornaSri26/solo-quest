@@ -98,6 +98,17 @@ interface AppState {
   isLoading: boolean;
   connectionStatus: 'connected' | 'disconnected' | 'connecting';
 
+  // Guild boss fight (#96) — live state pushed via boss:updated socket events
+  bossState: {
+    damage: string;
+    hpRemaining: string;
+    defeated: boolean;
+    by?: string;
+    updatedAt: number;
+  } | null;
+  setBossState: (s: { damage: string; hpRemaining: string; defeated: boolean; by?: string }) => void;
+  clearBossState: () => void;
+
   // Actions
   fetchHunter: () => Promise<void>;
   fetchStats: () => Promise<void>;
@@ -207,6 +218,7 @@ export const useStore = create<AppState>()(
         token: null,
         isLoading: false,
         connectionStatus: 'disconnected',
+        bossState: null,
         entitlements: null,
 
         // ========================
@@ -385,6 +397,11 @@ export const useStore = create<AppState>()(
             set({ rankUpEvent: data });
           });
 
+          // Guild boss fights (#96): live HP updates whenever any guild member lands a strike
+          socket.on('boss:updated', (data: { damage: string; hpRemaining: string; defeated: boolean; by?: string }) => {
+            get().setBossState(data);
+          });
+
           socket.on('loot:dropped', (loot: LootItem) => {
             // Play sound effect based on rarity
             soundEffects.lootDrop(loot.rarity);
@@ -399,6 +416,9 @@ export const useStore = create<AppState>()(
         disconnectWebSocket: () => {
           disconnectSocket();
         },
+
+        setBossState: (s) => set({ bossState: { ...s, updatedAt: Date.now() } }),
+        clearBossState: () => set({ bossState: null }),
 
         clearRankUpEvent: () => set({ rankUpEvent: null }),
 

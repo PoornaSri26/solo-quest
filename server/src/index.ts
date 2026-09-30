@@ -232,7 +232,7 @@ async function attemptBossStrike(
   questId: string
 ): Promise<
   | { outcome: 'no-guild' | 'no-boss' | 'ineligible' | 'duplicate' }
-  | { outcome: 'struck'; damage: string; hpRemaining: string; defeated: boolean; bossName: string; bossTier: number; guildId: string }
+  | { outcome: 'struck'; damage: string; hpRemaining: string; defeated: boolean; bossName: string; bossTier: number; guildId: string; victory?: { goldEach: number; fighters: number } }
 > {
   const socialStats = await withRetry(() => prisma.socialStats.findUnique({ where: { userId } }));
   if (!socialStats?.guildId) return { outcome: 'no-guild' };
@@ -264,6 +264,7 @@ async function attemptBossStrike(
 
   const damage = bossStrikeDamage(quest.rank);
 
+  let victoryPayout: { goldEach: number; fighters: number } | undefined;
   const result = await withRetry(() =>
     prisma.$transaction(async (tx) => {
       // Claim the quest's strike atomically (guards concurrent/duplicate strikes).
@@ -296,6 +297,32 @@ async function attemptBossStrike(
           where: { id: boss.id },
           data: { status: 'COMPLETED', endDate: new Date(), progressExp: hp },
         });
+
+        // Victory rewards (#96): flat gold per fighter, scaled by boss tier.
+        // Paid inside the same transaction as the killing blow so the boss
+        // can never pay out twice (defeat flips status atomically above).
+        const victoryGold = 100 * boss.bossTier;
+        const fighters = await tx.raidParticipant.findMany({
+          where: { raidId: boss.id },
+          select: { userId: true },
+        });
+        for (const f of fighters) {
+          const statsRow = await tx.hunterStats.findUnique({ where: { userId: f.userId } });
+          if (!statsRow) continue;
+          await tx.hunterStats.update({
+            where: { userId: f.userId },
+            data: { gold: { increment: victoryGold } },
+          });
+          await recordLedgerEntry(tx as any, {
+            userId: f.userId,
+            reason: 'BOSS_VICTORY',
+            goldDelta: victoryGold,
+            description: `Boss victory: ${boss.name} (tier ${boss.bossTier}, +${victoryGold}g)`,
+            referenceType: 'Raid',
+            referenceId: boss.id,
+          });
+        }
+        victoryPayout = { goldEach: victoryGold, fighters: fighters.length };
       }
 
       return {
@@ -305,6 +332,7 @@ async function attemptBossStrike(
         defeated,
         bossName: updated.name,
         bossTier: updated.bossTier,
+        victory: victoryPayout,
       };
     })
   );
@@ -3125,7 +3153,7 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
             data: {
               userId,
               message: strike.defeated
-                ? `${strike.bossName} has been defeated! Your guild brought it down.`
+                ? `${strike.bossName} has been defeated! Your guild brought it down.${strike.victory ? ` Victory reward: +${strike.victory.goldEach} gold per fighter (${strike.victory.fighters} fighters paid).` : ''}`
                 : `Your strike hit ${strike.bossName} for ${strike.damage} damage (${strike.hpRemaining} HP remaining).`,
               type: 'BOSS',
             },
@@ -6188,8 +6216,9 @@ const startServer = async () => {
           damage: result.damage,
           hpRemaining: result.hpRemaining,
           defeated: result.defeated,
+          victory: result.victory,
           message: result.defeated
-            ? `${result.bossName} has been defeated!`
+            ? `${result.bossName} has been defeated!${result.victory ? ` Every fighter earns ${result.victory.goldEach} gold.` : ''}`
             : `Strike landed on ${result.bossName} for ${result.damage} damage.`,
         });
       } catch (error) {
