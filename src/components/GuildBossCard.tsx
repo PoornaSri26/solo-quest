@@ -38,6 +38,17 @@ interface BossState {
   participantCount?: number;
 }
 
+/** Past victory in the kill-feed (#96). */
+interface BossVictory {
+  id: string;
+  name: string;
+  tier: number;
+  defeatedAt?: string | null;
+  totalDamage: string;
+  fighterCount: number;
+  topSlayer: { displayName: string; isMe: boolean } | null;
+}
+
 const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
   { tier: 1, name: 'Gatekeeper Hound', hp: 1500 },
   { tier: 2, name: 'Dire Beast of the Rift', hp: 4000 },
@@ -55,6 +66,7 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
   // the store stamps it, and this card re-fetches the fight state.
   const bossEvent = useStore((s) => s.bossState);
   const [boss, setBoss] = useState<BossState | null>(null);
+  const [victories, setVictories] = useState<BossVictory[]>([]);
   const [loading, setLoading] = useState(true);
   const [summoning, setSummoning] = useState(false);
   const [summonTier, setSummonTier] = useState(1);
@@ -62,8 +74,12 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
   const refresh = async () => {
     try {
       const api = createAuthApi(() => token);
-      const data = await api.get<BossState>('/guilds/boss/current');
+      const [data, history] = await Promise.all([
+        api.get<BossState>('/guilds/boss/current'),
+        api.get<{ victories: BossVictory[] }>('/guilds/boss/history').catch(() => ({ victories: [] })),
+      ]);
       setBoss(data);
+      setVictories(history.victories);
     } catch {
       setBoss(null);
     } finally {
@@ -144,6 +160,7 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
             {summoning ? 'Summoning…' : 'Summon Boss'}
           </Button>
         </div>
+        {victories.length > 0 && <KillFeed victories={victories} />}
       </Card>
     );
   }
@@ -235,6 +252,49 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
           No strikes yet — be the first to land one by clearing a quest.
         </p>
       )}
+
+      {victories.length > 0 && <KillFeed victories={victories} />}
     </Card>
+  );
+}
+
+/** Past boss victories (kill-feed), newest first — served by /guilds/boss/history. */
+function KillFeed({ victories }: { victories: BossVictory[] }) {
+  return (
+    <div className="mt-4 pt-4 border-t border-border-subtle">
+      <h4 className="flex items-center gap-2 text-sm font-display text-text-primary mb-3">
+        <Skull className="w-4 h-4 text-crimson" aria-hidden="true" />
+        Past Victories
+      </h4>
+      <ol className="space-y-1.5" aria-label="Guild boss kill-feed">
+        {victories.map((v) => (
+          <li
+            key={v.id}
+            className="flex items-center justify-between px-3 py-1.5 rounded-sm text-sm bg-raised/40 text-text-secondary"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="font-data text-xs text-crimson">T{v.tier}</span>
+              <span className="truncate text-text-primary">{v.name}</span>
+              <span className="text-xs text-text-muted">felled by {v.fighterCount} fighter{v.fighterCount === 1 ? '' : 's'}</span>
+            </span>
+            <span className="text-xs whitespace-nowrap">
+              {v.topSlayer ? (
+                <>
+                  <Swords className="inline w-3 h-3 text-gold-primary mr-1" aria-hidden="true" />
+                  <span className={v.topSlayer.isMe ? 'text-gold-primary' : ''}>
+                    {v.topSlayer.displayName}
+                    {v.topSlayer.isMe && <span className="text-gold-primary"> (you)</span>}
+                  </span>
+                </>
+              ) : (
+                <span className="font-data text-text-muted">
+                  {v.defeatedAt ? new Date(v.defeatedAt).toLocaleDateString() : ''}
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
