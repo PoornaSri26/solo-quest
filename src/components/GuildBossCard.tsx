@@ -51,6 +51,9 @@ const RANK_STRIKE_HINT = 'Every quest you clear lands a strike: E=100 Â· D=200 Â
 export default function GuildBossCard({ onChanged }: { onChanged?: () => void }) {
   const token = useStore((s) => s.token);
   const addToast = useStore((s) => s.addToast);
+  // Live updates: any guild member's strike pushes boss:updated via the socket,
+  // the store stamps it, and this card re-fetches the fight state.
+  const bossEvent = useStore((s) => s.bossState);
   const [boss, setBoss] = useState<BossState | null>(null);
   const [loading, setLoading] = useState(true);
   const [summoning, setSummoning] = useState(false);
@@ -72,6 +75,17 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Re-fetch when a boss:updated event lands (debounced via updatedAt stamp).
+  useEffect(() => {
+    if (!bossEvent) return;
+    refresh();
+    if (bossEvent.defeated) {
+      addToast('success', 'The boss has been defeated!');
+      useStore.getState().clearBossState();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bossEvent?.updatedAt]);
 
   const handleSummon = async () => {
     setSummoning(true);

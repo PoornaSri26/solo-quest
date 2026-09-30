@@ -5,6 +5,8 @@ All notable changes to Solo Quest are documented in this file. The format is bas
 ## [Unreleased]
 
 ### Added
+- Boss victory rewards (#96): defeating a shared boss pays every fighter flat gold scaled by tier (100g × tier), credited atomically inside the killing-blow transaction with `BOSS_VICTORY` ledger entries — the boss can never pay out twice.
+- Live boss fight state (#96): `boss:updated` socket events feed a store-level `bossState`; the Social page boss card re-fetches HP and leaderboard in real time as any guild member lands strikes.
 - Boss strikes are now automatic (#96): every verified quest completion lands a rank-scaled strike on the guild's active boss via the shared `attemptBossStrike` helper (the explicit `POST /api/guilds/boss/strike` endpoint remains for API/tests). Strike results arrive as a notification plus `boss:updated` socket event — no manual quest-ID input in the UI.
 - Boss fight leaderboard (#96): `GET /api/guilds/boss/current` returns the top 10 damage dealers (display names resolved) and participant count; the Social page renders the ranked list with the leader crowned and your own row highlighted.
 - Guild shared boss fights (#96): guilds summon a tiered rift boss (5 tiers, 1.5k–25k HP) that every member damages by striking with server-verified quest completions — each completion (≤7 days old, rank-scaled E=100…S=600 HP) is one strike, claimed atomically so it can never pay out twice. Live `boss:updated` WebSocket events for participants; new `isBoss`/`bossTier`/`bossStrikeUsed` schema fields with migrations.
