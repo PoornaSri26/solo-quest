@@ -23,9 +23,9 @@ export interface QuestSuggestion {
 }
 export type QuestCategory = 'Combat' | 'Intel' | 'Craft' | 'Survival' | 'Social' | 'Wildcard';
 export type QuestStatus = 'SHADOW' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'ARCHIVED';
-export type GateStatus = 'active' | 'cleared' | 'collapsed' | 'ACTIVE' | 'CLEARED' | 'COLLAPSED';
-export type NotificationType = 'info' | 'warning' | 'reward' | 'penalty' | 'INFO' | 'WARNING' | 'REWARD' | 'PENALTY';
-export type ShopCategory = 'theme' | 'frame' | 'title' | 'icon_set' | 'THEME' | 'FRAME' | 'TITLE' | 'ICON_SET';
+export type GateStatus = 'ACTIVE' | 'CLEARED' | 'COLLAPSED';
+export type NotificationType = 'INFO' | 'WARNING' | 'REWARD' | 'PENALTY';
+export type ShopCategory = 'THEME' | 'FRAME' | 'TITLE' | 'ICON_SET';
 
 export interface Hunter {
   id: string;

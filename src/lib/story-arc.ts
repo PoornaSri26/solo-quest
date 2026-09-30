@@ -102,10 +102,10 @@ export const STORY_CHAPTERS: StoryChapter[] = [
     title: 'VI. On the Nature of HP',
     transmission: 'HP is not health. It is Hunter Presence.',
     narrative:
-      'A Hunter at zero HP is not dying — they are dissociating: going through motions without investment. The System treats HP loss as a warning, not a punishment. You learn to guard your presence.',
-    requirement: 'Keep HP above 80%',
-    isComplete: (s) => s.hp / Math.max(s.hpMax, 1) > 0.8,
-    progress: (s) => Math.min(1, s.hp / Math.max(s.hpMax, 1) / 0.8),
+      'A Hunter at zero HP is not dying — they are dissociating: going through motions without investment. The System treats HP loss as a warning, not a punishment. You learn to guard your presence by recovering from setbacks.',
+    requirement: 'Reach Level 10',
+    isComplete: (s) => s.level >= 10,
+    progress: (s) => Math.min(1, (s.level - 8) / 2),
   },
   {
     id: 'ch-07-named',
