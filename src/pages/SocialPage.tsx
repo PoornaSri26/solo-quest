@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Share2, Trophy, Award, TrendingUp, Building2, Sword, Plus } from 'lucide-react';
+import { Users, Share2, Trophy, Award, TrendingUp, Building2, Sword, Plus, Skull } from 'lucide-react';
 import { SocialStats } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
@@ -8,6 +8,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
 import GuildCard from '../components/GuildCard';
 import RaidCard from '../components/RaidCard';
+import GuildBossCard from '../components/GuildBossCard';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -464,6 +465,19 @@ export default function SocialPage() {
                   No active raids. Create one to get started!
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Shared Boss Fight (#96) — guild members coordinate to fell a rift boss */}
+        {userGuild && (
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-6">
+              <Skull className="w-8 h-8 text-crimson" />
+              <h2 className="text-2xl font-bold text-white">Shared Boss Fight</h2>
+            </div>
+            <div className="max-w-2xl">
+              <GuildBossCard onChanged={fetchData} />
             </div>
           </div>
         )}

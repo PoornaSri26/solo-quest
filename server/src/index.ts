@@ -182,6 +182,33 @@ io.on('connection', (socket) => {
 });
 
 // Helper to emit to a specific user
+// BigInt does not implement toJSON — any res.json() that touches a BigInt
+// column (raids.targetExp/progressExp, guild.totalExp) throws
+// "Do not know how to serialize a BigInt". Serialize as string instead.
+// (BigInt.prototype is extensible; this global patch is idempotent.)
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
+// Serialize a Raid row for JSON responses (BigInt columns → strings).
+const serializeRaid = (raid: any) => ({
+  ...raid,
+  targetExp: raid.targetExp != null ? raid.targetExp.toString() : null,
+  progressExp: raid.progressExp != null ? raid.progressExp.toString() : null,
+});
+
+// Guild shared boss fights (#96). Tiers are deterministic (no RNG): HP scales
+// with tier and victory rewards are flat per eligible participant. Names are
+// original (IP-adjacent monarch names are deliberately avoided, see #368).
+const GUILD_BOSSES: { tier: number; name: string; hp: number }[] = [
+  { tier: 1, name: 'Gatekeeper Hound', hp: 1500 },
+  { tier: 2, name: 'Dire Beast of the Rift', hp: 4000 },
+  { tier: 3, name: 'Rift Marshal', hp: 9000 },
+  { tier: 4, name: 'Archon of the Deep Rift', hp: 16000 },
+  { tier: 5, name: 'The Rift Sovereign', hp: 25000 },
+];
+const BOSS_STRIKE_WINDOW_DAYS = 7; // completions older than this cannot fuel strikes
+
 const emitToUser = (userId: string, event: string, data: any) => {
   io.to(`user:${userId}`).emit(event, data);
 };
@@ -5625,7 +5652,7 @@ const startServer = async () => {
             orderBy: { startDate: 'desc' },
           })
         );
-        res.json(raids);
+        res.json(raids.map(serializeRaid));
       } catch (error) {
         logger.error('Get raids error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -5673,7 +5700,7 @@ const startServer = async () => {
           })
         );
 
-        res.status(201).json(raid);
+        res.status(201).json(serializeRaid(raid));
       } catch (error) {
         logger.error('Create raid error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -5821,6 +5848,247 @@ const startServer = async () => {
         res.json({ success: true, message: 'XP contributed successfully' });
       } catch (error) {
         logger.error('Contribute to raid error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    // ========================
+    // Guild shared boss fights (#96)
+    // ========================
+
+    /**
+     * @swagger
+     * /api/guilds/boss/current:
+     *   get:
+     *     summary: Get the caller guild's current shared boss fight
+
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.get('/api/guilds/boss/current', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+
+        const socialStats = await withRetry(() => prisma.socialStats.findUnique({ where: { userId } }));
+        if (!socialStats?.guildId) {
+          return res.status(403).json({ error: 'You must be in a guild to fight bosses' });
+        }
+
+        const guildId = socialStats.guildId;
+        const boss = await withRetry(() =>
+          prisma.raid.findFirst({
+            where: { guildId, isBoss: true, status: 'ACTIVE' },
+            orderBy: { startDate: 'desc' },
+            include: { participants: { orderBy: { expContributed: 'desc' } } },
+          })
+        );
+
+        if (!boss) return res.json({ boss: null });
+
+        const hp = boss.targetExp;
+        const damage = boss.progressExp;
+        res.json({
+          boss: serializeRaid(boss),
+          hp: hp.toString(),
+          damage: damage.toString(),
+          hpRemaining: (hp > damage ? hp - damage : BigInt(0)).toString(),
+          percent: Number((damage * BigInt(10000)) / hp) / 100,
+          me: boss.participants.find((p) => p.userId === userId)?.expContributed.toString() ?? '0',
+          // BigInt fields are stringified via the toJSON patch; participants included
+        });
+      } catch (error) {
+        logger.error('Get current boss error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/guilds/boss/spawn:
+     *   post:
+     *     summary: Summon a shared boss for the caller's guild
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/guilds/boss/spawn', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const tier = Number(req.body?.tier);
+
+        if (!Number.isInteger(tier) || tier < 1 || tier > 5) {
+          return res.status(400).json({ error: 'tier must be an integer between 1 and 5' });
+        }
+
+        const socialStats = await withRetry(() => prisma.socialStats.findUnique({ where: { userId } }));
+        if (!socialStats?.guildId) {
+          return res.status(403).json({ error: 'You must be in a guild to summon a boss' });
+        }
+        const guildId = socialStats.guildId;
+
+        const existing = await withRetry(() =>
+          prisma.raid.findFirst({ where: { guildId, isBoss: true, status: 'ACTIVE' } })
+        );
+        if (existing) {
+          return res.status(409).json({ error: 'Your guild already has an active boss. Defeat it first.' });
+        }
+
+        const spec = GUILD_BOSSES.find((b) => b.tier === tier)!;
+        const boss = await withRetry(() =>
+          prisma.raid.create({
+            data: {
+              guildId,
+              name: spec.name,
+              description: `Tier ${spec.tier} shared boss. Clear quests to deal damage — every completion is one strike.`,
+              targetExp: BigInt(spec.hp),
+              progressExp: BigInt(0),
+              status: 'ACTIVE',
+              createdBy: userId,
+              isBoss: true,
+              bossTier: spec.tier,
+            },
+          })
+        );
+
+        // Track the summoner as the first participant so damage attribution works
+        // even before other members join.
+        await withRetry(() => prisma.raidParticipant.create({ data: { raidId: boss.id, userId } }));
+
+        res.status(201).json({ boss: serializeRaid(boss) });
+      } catch (error) {
+        logger.error('Spawn boss error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    /**
+     * @swagger
+     * /api/guilds/boss/strike:
+     *   post:
+     *     summary: Deal one strike of boss damage from a verified quest completion
+     *     tags: [Raids]
+     *     security:
+     *       - bearerAuth: []
+     */
+    app.post('/api/guilds/boss/strike', authenticateToken, async (req, res) => {
+      try {
+        const userId = getUserId(req);
+        const { questId } = req.body ?? {};
+        if (!questId || typeof questId !== 'string') {
+          return res.status(400).json({ error: 'questId is required' });
+        }
+
+        const socialStats = await withRetry(() => prisma.socialStats.findUnique({ where: { userId } }));
+        if (!socialStats?.guildId) {
+          return res.status(403).json({ error: 'You must be in a guild to fight bosses' });
+        }
+
+        // Server-verified damage: the quest must belong to the caller, be
+        // COMPLETED, recent, and not have fueled a strike before.
+        const quest = await withRetry(() =>
+          prisma.quest.findUnique({ where: { id: questId } })
+        );
+        const strikeCutoff = new Date();
+        strikeCutoff.setDate(strikeCutoff.getDate() - BOSS_STRIKE_WINDOW_DAYS);
+        if (
+          !quest ||
+          quest.userId !== userId ||
+          quest.deletedAt !== null ||
+          quest.status !== 'COMPLETED' ||
+          !quest.completedAt ||
+          quest.completedAt < strikeCutoff ||
+          quest.bossStrikeUsed
+        ) {
+          return res.status(400).json({ error: 'Quest is not eligible for a strike' });
+        }
+
+        const guildId = socialStats.guildId;
+        const boss = await withRetry(() =>
+          prisma.raid.findFirst({
+            where: { guildId, isBoss: true, status: 'ACTIVE' },
+            include: { participants: true },
+          })
+        );
+        if (!boss) {
+          return res.status(404).json({ error: 'No active boss for your guild' });
+        }
+
+        // Strike damage scales with quest rank (E=1 … S=6), not with client input.
+        const rankDamage: Record<string, number> = { E: 1, D: 2, C: 3, B: 4, A: 5, S: 6 };
+        const damage = BigInt(rankDamage[quest.rank] ?? 1) * BigInt(100);
+
+        const result = await withRetry(() =>
+          prisma.$transaction(async (tx) => {
+            // Claim the quest's strike atomically (guards concurrent/duplicate strikes).
+            const claimed = await tx.quest.updateMany({
+              where: { id: quest.id, bossStrikeUsed: false },
+              data: { bossStrikeUsed: true },
+            });
+            if (claimed.count === 0) {
+              return { duplicate: true as const };
+            }
+
+            // Ensure the striker is a participant (idempotent upsert).
+            await tx.raidParticipant.upsert({
+              where: { raidId_userId: { raidId: boss.id, userId } },
+              create: { raidId: boss.id, userId, expContributed: damage },
+              update: { expContributed: { increment: damage }, lastActiveAt: new Date() },
+            });
+
+            const updated = await tx.raid.update({
+              where: { id: boss.id },
+              data: { progressExp: { increment: damage } },
+            });
+
+            const hp = updated.targetExp;
+            const dealt = updated.progressExp;
+            const defeated = dealt >= hp;
+
+            if (defeated) {
+              await tx.raid.update({
+                where: { id: boss.id },
+                data: { status: 'COMPLETED', endDate: new Date(), progressExp: hp },
+              });
+            }
+
+            return {
+              duplicate: false as const,
+              damage: damage.toString(),
+              hpRemaining: (hp > dealt ? hp - dealt : BigInt(0)).toString(),
+              defeated,
+              bossName: updated.name,
+              bossTier: updated.bossTier,
+            };
+          })
+        );
+
+        if (result.duplicate) {
+          return res.status(409).json({ error: 'This quest already fueled a strike' });
+        }
+
+        // Real-time updates to every participant.
+        for (const p of boss.participants) {
+          emitToUser(p.userId, 'boss:updated', {
+            bossId: boss.id,
+            damage: result.damage,
+            hpRemaining: result.hpRemaining,
+            defeated: result.defeated,
+            by: userId,
+          });
+        }
+
+        res.json({
+          success: true,
+          damage: result.damage,
+          hpRemaining: result.hpRemaining,
+          defeated: result.defeated,
+          message: result.defeated
+            ? `${result.bossName} has been defeated!`
+            : `Strike landed on ${result.bossName} for ${result.damage} damage.`,
+        });
+      } catch (error) {
+        logger.error('Boss strike error:', error);
         res.status(500).json({ error: 'Internal server error' });
       }
     });

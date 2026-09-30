@@ -64,6 +64,7 @@ codebase, annotated `(#N)`) as they are implemented.
 | 466 | OG image for social sharing | `public/og-image.svg` + `index.html` meta tags |
 | 421 | Offline feedback: connection banner while realtime sync is down | `src/components/ConnectionBanner.tsx` |
 | 30 | Hunter log heatmap: 53-week completion grid with streaks on the dashboard | `src/components/HunterLogHeatmap.tsx`, `server/src/index.ts` (`/api/hunter/activity-log`) |
+| 96 | Guild shared boss fights: tiered bosses damaged by verified quest completions (one strike per quest) | `server/src/index.ts` (`/api/guilds/boss/*`), `src/components/GuildBossCard.tsx`, `src/pages/SocialPage.tsx` |
 | 200 | WS reconnect with bounded attempts + backoff (socket.io reconnection config) | `src/lib/socket.ts` |
 
 ### 3D Avatars & Visuals (3D report §2, items not yet built)
