@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from './logger';
-import { allowedOrigins } from './env';
+import { isOriginAllowed } from './env';
 
 // Paths exempt from CSRF: server-to-server endpoints that authenticate via
 // signature verification (Stripe webhook) rather than browser credentials.
@@ -35,7 +35,7 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
 
   // Check Origin header first (preferred)
   if (origin) {
-    if (allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       return next();
     }
     logger.warn(`CSRF violation: Invalid Origin header: ${origin}`, { requestId: (req as any).id });
@@ -46,7 +46,7 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
   if (referer) {
     try {
       const refererOrigin = new URL(referer).origin;
-      if (allowedOrigins.includes(refererOrigin)) {
+      if (isOriginAllowed(refererOrigin)) {
         return next();
       }
     } catch {

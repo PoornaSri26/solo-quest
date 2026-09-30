@@ -1,5 +1,5 @@
 // Centralized API client with retry logic, timeout handling, and error management
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
 
 // Server retries from this client must never double-apply rewards or
 // purchases: every mutating request carries an Idempotency-Key, and the
@@ -18,6 +18,7 @@ interface ApiRequestOptions extends RequestInit {
   retries?: number;
   retryDelay?: number;
   skipAuth?: boolean;
+  skipValidation?: boolean;
 }
 
 class ApiError extends Error {
@@ -33,6 +34,49 @@ class ApiError extends Error {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Response validation
+const validateResponse = <T>(data: any, endpoint: string): T => {
+  // Basic validation - ensure response is not null/undefined
+  if (data === null || data === undefined) {
+    console.warn(`[API] Invalid response from ${endpoint}: null/undefined`);
+    throw new ApiError('Invalid response: null/undefined', 500);
+  }
+
+  // Validate common response structures
+  if (typeof data === 'object' && data !== null) {
+    // Check for error responses
+    if (data.error && typeof data.error === 'string') {
+      throw new ApiError(data.error, data.status || 400, data);
+    }
+
+    // Check for success boolean flag
+    if (data.success === false) {
+      throw new ApiError(data.message || 'Request failed', data.status || 400, data);
+    }
+  }
+
+  return data as T;
+};
+
+// Request logging
+const logRequest = (method: string, endpoint: string, data?: any) => {
+  if (import.meta.env.DEV) {
+    console.log(`[API] ${method} ${endpoint}`, data ? JSON.stringify(data, null, 2) : '');
+  }
+};
+
+// Response logging
+const logResponse = (method: string, endpoint: string, data: any, status: number) => {
+  if (import.meta.env.DEV) {
+    console.log(`[API] ${method} ${endpoint} - ${status}`, data);
+  }
+};
+
+// Error logging
+const logError = (method: string, endpoint: string, error: any) => {
+  console.error(`[API ERROR] ${method} ${endpoint}`, error);
+};
+
 const apiClient = async <T = any>(
   endpoint: string,
   options: ApiRequestOptions = {}
@@ -43,6 +87,7 @@ const apiClient = async <T = any>(
     retryDelay = 1000,
     headers = {},
     skipAuth = false,
+    skipValidation = false,
     ...fetchOptions
   } = options;
 
@@ -61,6 +106,11 @@ const apiClient = async <T = any>(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+      // Log request (only on first attempt to avoid spam)
+      if (attempt === 0) {
+        logRequest(method, endpoint, fetchOptions.body ? JSON.parse(fetchOptions.body as string) : undefined);
+      }
+
       const response = await fetch(url, {
         ...fetchOptions,
         headers: {
@@ -76,6 +126,7 @@ const apiClient = async <T = any>(
       // Handle non-OK responses
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        logError(method, endpoint, { status: response.status, data });
         
         // Handle specific error cases
         if (response.status === 401) {
@@ -104,6 +155,15 @@ const apiClient = async <T = any>(
 
       // Parse JSON response
       const data = await response.json();
+      
+      // Log response
+      logResponse(method, endpoint, data, response.status);
+
+      // Validate response unless explicitly skipped
+      if (!skipValidation) {
+        return validateResponse<T>(data, endpoint);
+      }
+
       return data as T;
 
     } catch (error) {

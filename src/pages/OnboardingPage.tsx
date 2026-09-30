@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { createAuthApi } from '../lib/api';
 import { HunterClass } from '../shared/types';
+import { SystemGlyphs } from '../components/originkit/ui/ambient-void';
 
 const CLASS_OPTIONS: Array<{ value: HunterClass; emoji: string; name: string; desc: string }> = [
   { value: 'WARRIOR', emoji: '⚔️', name: 'Warrior', desc: 'Momentum through action. Fitness & combat quests feel natural.' },
@@ -195,8 +196,9 @@ export default function OnboardingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-void flex items-center justify-center p-4">
-      <div className="w-full max-w-lg">
+    <div className="relative min-h-screen bg-void flex items-center justify-center p-4">
+      <SystemGlyphs color="#C9A84C" density={70} speed={0.6} seed={11} />
+      <div className="relative z-10 w-full max-w-lg">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm text-gray-400">Step {step} of {steps.length}</span>

@@ -33,6 +33,7 @@ const QuestCard: React.FC<{
 
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [showReflectModal, setShowReflectModal] = useState(false);
+  const [showTieredModal, setShowTieredModal] = useState(false);
   const [reflectionText, setReflectionText] = useState('');
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -107,30 +108,28 @@ const QuestCard: React.FC<{
     }
   };
 
-  const handleTieredComplete = async () => {
-    const quality = prompt('Enter completion quality (PERFECT, GOOD, or POOR):');
-    if (quality && ['PERFECT', 'GOOD', 'POOR'].includes(quality.toUpperCase())) {
-      try {
-        setIsLoading('tiered');
-        setError(null);
-        
-        const api = createAuthApi(() => token);
-        const data = await api.post(`/quests/${quest.id}/complete-tiered`, { 
-          completionQuality: quality.toUpperCase() 
-        });
+  const handleTieredComplete = async (quality: 'PERFECT' | 'GOOD' | 'POOR') => {
+    try {
+      setIsLoading('tiered');
+      setError(null);
 
-        if (data.success) {
-          alert(`Quest completed with ${data.quality} quality! Earned ${data.rewards.xp} XP and ${data.rewards.gold} Gold`);
-          window.location.reload();
-        }
-      } catch (error) {
-        console.error('Failed to complete quest with tiered rewards:', error);
-        setError('Failed to complete quest. Please try again.');
-      } finally {
-        setIsLoading(null);
+      const api = createAuthApi(() => token);
+      const data = await api.post<{ success: boolean; quality: string; rewards: { xp: number; gold: number } }>(
+        `/quests/${quest.id}/complete-tiered`,
+        { completionQuality: quality }
+      );
+
+      if (data.success) {
+        setShowTieredModal(false);
+        addToast('success', `Quest completed with ${data.quality.toLowerCase()} quality! +${data.rewards.xp} XP, +${data.rewards.gold} gold.`);
+        await useStore.getState().fetchQuests();
+        await useStore.getState().fetchStats();
       }
-    } else if (quality) {
-      setError('Please enter PERFECT, GOOD, or POOR');
+    } catch (error) {
+      console.error('Failed to complete quest with tiered rewards:', error);
+      setError('Failed to complete quest. Please try again.');
+    } finally {
+      setIsLoading(null);
     }
   };
 
@@ -327,7 +326,7 @@ const QuestCard: React.FC<{
               {/* Tiered Complete Button - Phase 2 */}
               {!['COMPLETED', 'FAILED', 'ARCHIVED'].includes(quest.status) && (
                 <button
-                  onClick={handleTieredComplete}
+                  onClick={() => setShowTieredModal(true)}
                   disabled={isLoading !== null}
                   className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-400/20 text-purple-400 hover:bg-purple-400/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Complete with quality rating for adjusted rewards"
@@ -460,6 +459,53 @@ const QuestCard: React.FC<{
           onDecision={handleDecision}
           onCancel={() => setShowDecisionModal(false)}
         />
+      )}
+
+      {/* Tiered Completion Modal - Phase 2 */}
+      {showTieredModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Quest completion quality"
+          onClick={() => setShowTieredModal(false)}
+        >
+          <div
+            className="bg-surface border border-border-subtle rounded-md p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-text-primary text-lg mb-2">How did it go?</h3>
+            <p className="text-text-secondary text-sm mb-4">
+              Rate your completion quality — rewards scale accordingly.
+            </p>
+            <div className="grid gap-2">
+              {([
+                { value: 'PERFECT' as const, label: 'Perfect', desc: 'Nailed it — full plus bonus rewards', cls: 'bg-rank-s/20 text-rank-s border-rank-s hover:bg-rank-s/30' },
+                { value: 'GOOD' as const, label: 'Good', desc: 'Solid effort — standard rewards', cls: 'bg-green-clear/20 text-green-clear border-green-clear hover:bg-green-clear/30' },
+                { value: 'POOR' as const, label: 'Barely', desc: 'Got there eventually — reduced rewards', cls: 'bg-gold-primary/20 text-gold-primary border-gold-primary hover:bg-gold-primary/30' },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleTieredComplete(opt.value)}
+                  disabled={isLoading === 'tiered'}
+                  className={`flex items-center justify-between px-4 py-3 border rounded-sm text-left transition-fast disabled:opacity-50 ${opt.cls}`}
+                >
+                  <span>
+                    <span className="font-display block">{opt.label}</span>
+                    <span className="text-xs opacity-75">{opt.desc}</span>
+                  </span>
+                  {isLoading === 'tiered' && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowTieredModal(false)}
+              className="mt-4 w-full px-4 py-2 text-sm border border-border-subtle text-text-secondary hover:text-text-primary rounded-sm transition-fast"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Failure Reflection Modal (#66) */}

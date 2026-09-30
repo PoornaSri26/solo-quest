@@ -4,6 +4,7 @@ import { Flag, Trophy, Star, Award, CheckCircle, Lock } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -124,6 +125,7 @@ export default function ProgressionPage() {
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse animation-delay-2000"></div>
+        <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={120} linkDistance={95} speed={0.5} dotSize={1.2} />
       </div>
 
       <div ref={pageRef} className="max-w-4xl mx-auto relative z-10">
@@ -133,6 +135,9 @@ export default function ProgressionPage() {
             Progression Path
           </h1>
         </div>
+        <p className="font-system text-text-system text-xs -mt-4 mb-8" aria-label="System: Rank trajectory plotted. The path is long but marked.">
+          <TypeSequence text="[System: Rank trajectory plotted. The path is long but marked.]" />
+        </p>
 
         {progression && (
           <>

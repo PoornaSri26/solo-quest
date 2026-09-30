@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { Plus } from 'lucide-react';
+import { VoidDrift } from '../components/originkit/ui/ambient-void';
+import SystemPageHeader from '../components/SystemPageHeader';
 
 const GatesPage: React.FC = () => {
   const {
@@ -72,8 +74,10 @@ const GatesPage: React.FC = () => {
   }, [fetchGates]);
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-display text-text-primary mb-6">Gates (Projects)</h1>
+    <div className="relative p-6">
+      <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={105} linkDistance={95} speed={0.7} />
+      <div className="relative z-10">
+      <SystemPageHeader title="Gates (Projects)" systemLine="Gate survey complete. Projects await inscription." />
 
       {/* Add Gate Form */}
       <div className="bg-raised border border-border-subtle rounded-md p-6 mb-8">
@@ -311,6 +315,7 @@ const GatesPage: React.FC = () => {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 };

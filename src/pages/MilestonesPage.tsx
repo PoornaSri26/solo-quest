@@ -5,6 +5,7 @@ import { Milestone, MilestoneProgress } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
 import { createAuthApi } from '../lib/api';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -218,6 +219,7 @@ export default function MilestonesPage() {
       <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse animation-delay-2000"></div>
+        <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={115} linkDistance={100} speed={0.55} />
       </div>
 
       <div ref={pageRef} className="max-w-7xl mx-auto relative z-10">
@@ -258,6 +260,9 @@ export default function MilestonesPage() {
             Create Milestone
           </button>
         </div>
+        <p className="font-system text-text-system text-xs -mt-4 mb-8" aria-label="System: Milestone registry loaded. Each step is carved in stone.">
+          <TypeSequence text="[System: Milestone registry loaded. Each step is carved in stone.]" />
+        </p>
 
         <div ref={cardsRef} className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {milestones.map((milestone) => {

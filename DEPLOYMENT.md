@@ -89,7 +89,15 @@ npx prisma migrate deploy
 
 # Seed initial data (optional)
 npx prisma db seed
+
+# Seed the superadmin account (required for the admin dashboard)
+# Uses SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD / SUPERADMIN_NAME from .env
+npm run prisma:seed:admin
 ```
+
+> **Production:** the script refuses to run with the default password
+> (`ChangeMe!2026`) when `NODE_ENV=production`. Always set a strong
+> `SUPERADMIN_PASSWORD` in your secret manager before deploying.
 
 ### Connection Pooling
 

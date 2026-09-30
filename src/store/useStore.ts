@@ -206,6 +206,7 @@ export const useStore = create<AppState>()(
         token: null,
         isLoading: false,
         connectionStatus: 'disconnected',
+        entitlements: null,
 
         // ========================
         // Auth actions

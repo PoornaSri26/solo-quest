@@ -12,6 +12,7 @@ import LootPopup from './components/LootPopup';
 import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
 import { SkipLink } from './components/SkipLink';
+import ChronicleSidebarButton from './components/ChronicleSidebarButton';
 import { getAvatarUrl } from './lib/avatars';
 import { Swords, ScrollText, DoorOpen, User, Ghost, Store, LogOut, Menu, X, Trophy, Gem, Target, Brain, Users, Flag, Crown } from 'lucide-react';
 
@@ -224,6 +225,7 @@ const AppLayout: React.FC = () => {
             <Store className="w-4 h-4" aria-hidden="true" />
             Shop
           </NavLink>
+          <ChronicleSidebarButton />
           <NavLink
             to="/milestones"
             className={({ isActive }) => `
@@ -295,13 +297,14 @@ const AppLayout: React.FC = () => {
             Subscription
           </NavLink>
           {hunter?.role === 'SUPERADMIN' && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) => `
-                flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
-                ${isActive ? 'bg-raised text-gold-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-gold-primary'}
-              `}
-            >
+          <NavLink
+            to="/admin"
+            end
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3 py-2 rounded-sm text-sm transition-fast
+              ${isActive ? 'bg-raised text-gold-primary border-l-2 border-gold-primary' : 'text-text-secondary hover:bg-raised hover:text-gold-primary'}
+            `}
+          >
               <ShieldCheck className="w-4 h-4" aria-hidden="true" />
               Admin Panel
             </NavLink>
@@ -326,6 +329,7 @@ const AppLayout: React.FC = () => {
       {/* Main Content */}
       <main id="main-content" className="flex-1 overflow-y-auto pt-16 md:pt-0" tabIndex={-1}>
         <Routes>
+          <Route path="/" element={<Dashboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/quests" element={
             <Suspense fallback={<PageLoader />}>
@@ -387,6 +391,13 @@ const AppLayout: React.FC = () => {
               <SubscriptionPage />
             </Suspense>
           } />
+          <Route path="/admin" element={
+            <SuperadminGuard>
+              <Suspense fallback={<PageLoader />}>
+                <AdminDashboardPage />
+              </Suspense>
+            </SuperadminGuard>
+          } />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -423,116 +434,10 @@ const App: React.FC = () => {
         
         {/* Protected routes */}
         <Route
-          path="/dashboard"
+          path="/*"
           element={
             <AuthGuard>
               <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/quests"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/gates"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/shadow"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/shop"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/milestones"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/mastery"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/mementos"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/knowledge"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/social"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/progression"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/subscription"
-          element={
-            <AuthGuard>
-              <AppLayout />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <AuthGuard>
-              <SuperadminGuard>
-                <AppLayout />
-              </SuperadminGuard>
             </AuthGuard>
           }
         />

@@ -8,9 +8,8 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import compression from 'compression';
 import helmet from 'helmet';
-import Stripe from 'stripe';
 import logger from './logger';
-import { env, allowedOrigins } from './env';
+import { env, allowedOrigins, isOriginAllowed } from './env';
 import { initRedisClient, closeRedisClient, getRateLimiter, initRateLimiters, RATE_LIMIT_CONFIG, type RateLimiterType } from './rateLimiter';
 import { initCacheClient, closeCacheClient, getFromCache, setCache, deleteFromCache, deleteCachePattern, invalidateUserCache, getCacheStats } from './cache';
 import { csrfProtection } from './csrf';
@@ -33,6 +32,7 @@ import {
   getUserSubscription,
   cancelSubscription,
   SUBSCRIPTION_PLANS,
+  getStripe,
 } from './stripe';
 import {
   requireSubscriptionTier,
@@ -62,9 +62,9 @@ import { initJobs, closeJobs, queueImmediateReconcile } from './jobs';
 
 dotenv.config();
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-06-20' as any,
-});
+// Stripe client comes from ./stripe (guarded lazy singleton — a bare
+// `new Stripe('')` throws an uncaughtException and killed the boot).
+const stripe = getStripe();
 
 const app = express();
 const httpServer = createServer(app);
@@ -79,6 +79,8 @@ app.set('trust proxy', 1);
 declare module 'express-serve-static-core' {
   interface Request {
     id?: string;
+    user?: any;
+    idempotencyKey?: string;
   }
 }
 
@@ -117,7 +119,9 @@ async function withRetry<T>(
 // Socket.IO setup with minimal latency configuration and heartbeat monitoring
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5000', 'http://localhost'],
+    // Same shared validation as Express CORS/CSRF (ADR-003) — no local
+    // hardcoded list so it can never drift from ALLOWED_ORIGINS.
+    origin: (origin, cb) => cb(null, isOriginAllowed(origin)),
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     credentials: true,
   },
@@ -209,9 +213,12 @@ app.use(helmet({
     preload: true,
   },
 }));
-// 2. cors — same shared allowlist (review #3)
+// 2. cors — same shared validation as CSRF/Socket.IO (review #3 + ADR-003).
+//    Function form: strict allowlist in production; in development also
+//    allows localhost on any port (vite auto-increments 5174, 5175 …) and
+//    private LAN IPs (mobile device testing).
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, cb) => cb(null, isOriginAllowed(origin)),
   credentials: true,
 }));
 // 3. compression
@@ -917,6 +924,127 @@ app.patch('/api/settings', authenticateToken, async (req, res) => {
     res.json(settings);
   } catch (error) {
     logger.error('Update settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================
+// Chronicle (story arc) persistence
+// ------------------------
+// Chapter acknowledgments live on UserSettings.storyProgress as a JSON blob
+// ({ clearedIds: string[] }). Validated server-side against the known
+// chapter-id prefix (ch-NN-) so arbitrary payloads are rejected; length-
+// capped. This is presentation state, not economy — no rewards flow from it.
+// ========================
+
+const STORY_ID_PATTERN = /^ch-\d{2}-[a-z0-9-]+$/;
+const STORY_PROGRESS_MAX_BYTES = 4096;
+
+function parseStoryProgress(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.clearedIds)) return [];
+    return parsed.clearedIds
+      .filter((id: unknown): id is string => typeof id === 'string' && STORY_ID_PATTERN.test(id))
+      .slice(0, 64);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @swagger
+ * /api/story:
+ *   get:
+ *     summary: Get the hunter's Chronicle progress (acknowledged chapters)
+ *     tags: [Hunter]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Chronicle progress
+ */
+app.get('/api/story', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId },
+      select: { storyProgress: true },
+    });
+    const clearedIds = parseStoryProgress(settings?.storyProgress);
+    res.json({ clearedIds });
+  } catch (error) {
+    logger.error('Get story error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/story:
+ *   put:
+ *     summary: Persist the hunter's Chronicle progress (acknowledged chapters)
+ *     tags: [Hunter]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               clearedIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Chronicle progress saved
+ */
+app.put('/api/story', authenticateToken, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { clearedIds } = req.body ?? {};
+
+    if (!Array.isArray(clearedIds)) {
+      return res.status(400).json({ error: 'clearedIds must be an array' });
+    }
+    if (clearedIds.length > 64) {
+      return res.status(400).json({ error: 'clearedIds too long (max 64)' });
+    }
+    for (const id of clearedIds) {
+      if (typeof id !== 'string' || !STORY_ID_PATTERN.test(id)) {
+        return res.status(400).json({ error: `invalid chapter id: ${String(id).slice(0, 32)}` });
+      }
+    }
+
+    const payload = JSON.stringify({ clearedIds });
+    if (payload.length > STORY_PROGRESS_MAX_BYTES) {
+      return res.status(400).json({ error: 'story progress payload too large' });
+    }
+
+    // findUnique+create/update (not upsert): userId has a unique constraint,
+    // and settings rows are created by /api/settings on first login anyway.
+    const existing = await prisma.userSettings.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.userSettings.update({
+        where: { id: existing.id },
+        data: { storyProgress: payload },
+      });
+    } else {
+      await prisma.userSettings.create({
+        data: { userId, storyProgress: payload },
+      });
+    }
+
+    res.json({ ok: true, clearedIds });
+  } catch (error) {
+    logger.error('Update story error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -5992,14 +6120,6 @@ const startServer = async () => {
       }
     });
 
-    // ============================================================
-    // Error handling — MUST be the last middleware registered
-    // (review critical #1): the catch-all 404 runs when no route matched;
-    // the 4-arg error handler is always final in the chain.
-    // ============================================================
-    app.use(notFoundMiddleware);
-    app.use(errorHandlerMiddleware);
-
     httpServer.listen(port, () => {
       logger.info(`Server is running on port ${port}`);
     });
@@ -6027,6 +6147,21 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// ============================================================
+// Error handling — MUST be the last middleware registered
+// (review critical #1): the catch-all 404 runs when no route matched;
+// the 4-arg error handler is always final in the chain.
+// Registered at module load (not inside startServer) so the exported app
+// serves JSON 404s even when the test suite imports it without booting.
+// ============================================================
+app.use(notFoundMiddleware);
+app.use(errorHandlerMiddleware);
+
+// Boot when run directly, but not when the app module is imported by the
+// test suite (supertest drives the exported app; listen() would EADDRINUSE
+// and the shop-seed would process.exit(1) on an empty test DB).
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
 
 export default app;

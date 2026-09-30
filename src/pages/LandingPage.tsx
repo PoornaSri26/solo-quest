@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import PredictiveArc from '../components/PredictiveArc';
+import CursorRingField from '../components/CursorRingField';
+import RotatingGallery from '../components/originkit/ui/rotatinggallery';
 import RadialRevealButton from '../components/RadialRevealButton';
 
 const heroButtonFont = {
@@ -73,14 +74,14 @@ export default function LandingPage() {
       {/* Hero Section */}
       <div ref={heroRef} className="relative min-h-screen flex items-center justify-center">
         <div className="absolute inset-0 z-0">
-          <PredictiveArc 
+          <CursorRingField 
             background="#020617"
-            baseColor="#7c3aed"
-            accentColor="#a78bfa"
-            highlight="#c4b5fd"
-            width={1200}
-            height={800}
-            style={{ width: '100%', height: '100%' }}
+            colors={["#7c3aed", "#a78bfa", "#c4b5fd"]}
+            density={200}
+            dotSize={120}
+            speed={6}
+            cameraDistance={160}
+            ring={{ push: 50, width: 9, radius: 12, turbulence: 100 }}
           />
         </div>
 
@@ -261,8 +262,8 @@ export default function LandingPage() {
       </div>
 
       {/* Feature Overview */}
-      <div ref={featuresRef} className="py-24 bg-slate-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div ref={featuresRef} className="py-24 bg-slate-950 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
               Everything you need
@@ -270,6 +271,21 @@ export default function LandingPage() {
             <p className="text-lg text-gray-400 max-w-2xl mx-auto">
               Powerful features designed to make productivity feel rewarding.
             </p>
+          </div>
+
+          {/* Horizontal Rotating Gallery */}
+          <div className="mb-16 h-[400px] w-full relative">
+            <RotatingGallery 
+              background="transparent"
+              cardWidth={300}
+              cardHeight={200}
+              spacing={8}
+              radius={8}
+              rotation={{ spin: 3, twist: 2, axis: "y" }}
+              scrollSensitivity={15}
+              dragSensitivity={8}
+              style={{ borderRadius: '16px' }}
+            />
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -281,7 +297,7 @@ export default function LandingPage() {
               { title: "Leaderboards", icon: "🏆", description: "Compete globally and climb the rankings" },
               { title: "Advanced Stats", icon: "📊", description: "Track productivity patterns and optimize your workflow" },
             ].map((feature, index) => (
-              <div key={index} className="bg-slate-900 p-8 rounded-xl border border-slate-800 hover:border-slate-700 transition-all duration-300">
+              <div key={index} className="bg-slate-900 p-8 rounded-xl border border-slate-800 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 transition-all duration-300">
                 <div className="text-3xl mb-4">{feature.icon}</div>
                 <h3 className="text-xl font-bold text-white mb-2">{feature.title}</h3>
                 <p className="text-gray-400">{feature.description}</p>

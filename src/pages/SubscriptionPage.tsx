@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Crown, Check, X, CreditCard, Loader2 } from 'lucide-react';
+import { Crown, Check, CreditCard, Loader2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { VoidDrift, TypeSequence } from '../components/originkit/ui/ambient-void';
 
 interface Plan {
   name: string;
@@ -140,6 +141,7 @@ export default function SubscriptionPage() {
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse animation-delay-2000"></div>
+        <VoidDrift baseColor="#C9A84C" accentColor="#a594f5" density={125} linkDistance={90} speed={0.45} dotSize={1.5} />
       </div>
 
       <div className="max-w-7xl mx-auto relative z-10">
@@ -148,6 +150,9 @@ export default function SubscriptionPage() {
           <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-200 bg-clip-text text-transparent mb-4">
             Choose Your Path
           </h1>
+          <p className="font-system text-text-system text-xs mb-3" aria-label="System: The System offers contracts. Choose freely.">
+            <TypeSequence text="[System: The System offers contracts. Choose freely.]" />
+          </p>
           <p className="text-gray-300 text-lg max-w-2xl mx-auto">
             Unlock powerful features to enhance your productivity journey
           </p>

@@ -1,6 +1,8 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 import QuickCapture from '../components/QuickCapture';
+import { SystemGlyphs } from '../components/originkit/ui/ambient-void';
+import SystemPageHeader from '../components/SystemPageHeader';
 
 const ShadowRealmPage: React.FC = () => {
   const {
@@ -10,8 +12,10 @@ const ShadowRealmPage: React.FC = () => {
   } = useStore();
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-display text-text-primary mb-6">Shadow Realm</h1>
+    <div className="relative p-6">
+      <SystemGlyphs color="#a594f5" density={100} speed={0.8} />
+      <div className="relative z-10">
+      <SystemPageHeader title="Shadow Realm" systemLine="The Shadow listens. Capture what flickers." />
       <p className="mb-6 text-text-secondary">
         Capture fleeting thoughts and ideas here before they fade into oblivion.
       </p>
@@ -82,6 +86,7 @@ const ShadowRealmPage: React.FC = () => {
             Your captured ideas will appear here as you add them to the Shadow Realm.
           </p>
         </div>
+      </div>
       </div>
     </div>
   );

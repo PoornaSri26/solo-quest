@@ -5,6 +5,7 @@ import { Memento, UserMemento } from '../shared/types';
 import { useStore } from '../store/useStore';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { SystemGlyphs, TypeSequence } from '../components/originkit/ui/ambient-void';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -187,6 +188,7 @@ export default function MementosPage() {
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse animation-delay-2000"></div>
+        <SystemGlyphs color="#a594f5" density={105} speed={0.7} seed={33} />
       </div>
 
       <div ref={pageRef} className="max-w-7xl mx-auto relative z-10">
@@ -205,6 +207,9 @@ export default function MementosPage() {
             Create Memento
           </button>
         </div>
+        <p className="font-system text-text-system text-xs -mt-4 mb-8" aria-label="System: The vault recognizes what you have endured.">
+          <TypeSequence text="[System: The vault recognizes what you have endured.]" />
+        </p>
 
         <div className="mb-6">
           <p className="text-gray-300">Collect mementos by completing milestones and achievements</p>
