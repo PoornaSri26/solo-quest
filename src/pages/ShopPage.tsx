@@ -3,6 +3,8 @@ import { useStore } from '../store/useStore';
 import RadialRevealButton from '../components/RadialRevealButton';
 import { VoidDrift } from '../components/originkit/ui/ambient-void';
 import SystemPageHeader from '../components/SystemPageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 
 const shopButtonFont = {
   fontFamily: '"Rajdhani", sans-serif',
@@ -129,12 +131,8 @@ const ShopPage: React.FC = () => {
           ) : (
             <div className="grid gap-4 md:grid-cols-2" role="list" aria-label="Shop items">
               {shopItems.map((item) => (
-                <article 
-                  key={item.id} 
-                  className="bg-raised border border-border-subtle rounded-md p-4"
-                  role="listitem"
-                >
-                  <h3 className="font-medium text-text-primary mb-2">{item.name}</h3>
+                <Card key={item.id} className="p-4" role="listitem">
+                  <h3 className="font-display font-medium text-text-primary mb-2">{item.name}</h3>
                   <p className="text-sm text-text-secondary mb-2">{item.description}</p>
                   <span className="text-xs text-text-muted mb-3 block">{item.category}</span>
                   <div className="flex items-center justify-between">
@@ -143,32 +141,24 @@ const ShopPage: React.FC = () => {
                     </span>
                     {isOwned(item.id) ? (
                       <span 
-                        className="px-3 py-1 text-xs bg-green-clear/20 text-green-clear border border-green-clear rounded-sm"
+                        className="px-3 py-1 text-xs bg-green-clear/20 text-green-clear border border-green-clear rounded-md"
                         aria-label={`${item.name} is owned`}
                       >
                         Owned
                       </span>
                     ) : (
-                      <RadialRevealButton
-                        label={purchasingId === item.id ? 'Purchasing...' : 'Buy'}
+                      <Button
                         onClick={() => handlePurchase(item.id)}
                         disabled={(stats?.gold ?? 0) < item.costGold || purchasingId === item.id}
+                        variant="primary"
+                        size="sm"
                         ariaLabel={`Purchase ${item.name} for ${item.costGold} gold`}
-                        font={shopButtonFont}
-                        padding="4px 12px"
-                        rounded={4}
-                        showText
-                        colors={{
-                          fill: 'var(--gold-primary)',
-                          textColor: 'var(--bg-void)',
-                          hoverFill: 'var(--violet-gate)',
-                          hoverTextColor: '#ffffff',
-                        }}
-                        border={{ borderWidth: 0 }}
-                      />
+                      >
+                        {purchasingId === item.id ? 'Purchasing...' : 'Buy'}
+                      </Button>
                     )}
                   </div>
-                </article>
+                </Card>
               ))}
             </div>
           )}
@@ -177,35 +167,30 @@ const ShopPage: React.FC = () => {
         {/* Inventory */}
         <aside className="w-full md:w-64">
           <h2 className="text-lg font-display mb-4 text-text-primary">Inventory</h2>
-          <div 
-            className="bg-raised border border-border-subtle rounded-md p-4 max-h-96 overflow-y-auto"
-            role="region"
-            aria-label="Your inventory"
-          >
+          <Card className="p-4 max-h-96 overflow-y-auto" role="region" aria-label="Your inventory">
             {userInventory.length > 0 ? (
               <ul className="space-y-3" role="list">
                 {userInventory.map((inv) => (
-                  <li key={inv.id} className="flex items-start gap-3 p-3 bg-surface rounded-sm">
+                  <li key={inv.id} className="flex items-start gap-3 p-3 bg-surface rounded-md">
                     <div className="flex-shrink-0">
-                      <div className="w-8 h-8 bg-raised rounded-sm flex items-center justify-center border border-border-subtle" aria-hidden="true">
+                      <div className="w-8 h-8 bg-raised rounded-md flex items-center justify-center border border-border-subtle" aria-hidden="true">
                         <span className="text-text-secondary">🎁</span>
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-text-primary text-sm">{inv.item?.name || 'Item'}</p>
+                      <p className="font-display font-medium text-text-primary text-sm">{inv.item?.name || 'Item'}</p>
                       <p className="text-xs text-text-secondary">
                         {inv.equipped ? '(Equipped)' : '(Unequipped)'}
                       </p>
                     </div>
-                    <button
+                    <Button
                       onClick={() => handleEquip(inv.id)}
-                      aria-label={`${inv.equipped ? 'Unequip' : 'Equip'} ${inv.item?.name || 'item'}`}
-                      className={inv.equipped
-                        ? 'px-2 py-0.5 text-xs bg-green-clear/20 border border-green-clear text-green-clear rounded-sm transition-fast'
-                        : 'px-2 py-0.5 text-xs border border-border-subtle text-text-secondary hover:bg-raised rounded-sm transition-fast'}
+                      variant={inv.equipped ? 'success' : 'secondary'}
+                      size="sm"
+                      ariaLabel={`${inv.equipped ? 'Unequip' : 'Equip'} ${inv.item?.name || 'item'}`}
                     >
                       {inv.equipped ? 'Unequip' : 'Equip'}
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -214,7 +199,7 @@ const ShopPage: React.FC = () => {
                 Your inventory is empty. Purchase items from the shop!
               </p>
             )}
-          </div>
+          </Card>
         </aside>
       </div>
       </div>
