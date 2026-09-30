@@ -4,6 +4,12 @@ Open issues with workarounds. Fixed items move to the changelog.
 
 ## Open
 
+### Migration history is incomplete: shadow-database replay fails (`prisma migrate dev`)
+**Symptom:** `prisma migrate dev --create-only` fails with P3006 ("no such table: UserSettings") on a fresh shadow database.
+**Cause:** several tables (`raids`, `guilds`, `UserSettings`, `SocialStats`, white-label models, …) were created via `prisma db push` in existing environments and were never captured in a migration file. The migration directory therefore does not reconstruct a full schema, so replay against a fresh database breaks partway through.
+**Impact:** dev databases keep working; `prisma db execute` + `prisma migrate resolve --applied` is the supported flow for adding new migrations (used for the guild-boss migrations, 2026-09-30). CI/test runs seed schema via `db push` or a prebuilt test.db and are unaffected.
+**Fix path:** generate a full baseline migration (`prisma migrate diff --from-empty --to-schema-datamodel` → apply as `--applied` on all environments), after which `migrate dev` works normally. Tracked until then.
+
 ### Coverage is excluded for SDK-wrapper and admin-route modules
 **Files:** `server/jest.config.js`
 Stripe/Redis/jobs wrappers and the admin/analytics REST layers are excluded from coverage collection (with rationale in the config) because exercising them requires live vendor credentials or a full admin e2e suite. Backlog #241 follow-up: replace exclusions with real tests as those surfaces stabilize.
@@ -26,3 +32,6 @@ The catch-all 404/error middleware was registered inside `startServer()`, after 
 
 ### `prisma db push` did not honor `DATABASE_URL`
 The datasource URL was hardcoded to `file:./dev.db` in `schema.prisma`. The datasource now uses `env("DATABASE_URL")` so the CLI and the app read the same value from `.env`.
+
+### Raid endpoints crashed serializing BigInt
+`res.json(raid)` threw "Do not know how to serialize a BigInt" because `Raid.targetExp`/`progressExp` (and `Guild.totalExp`) are `BigInt` columns. Fixed with a global `BigInt.prototype.toJSON` patch plus an explicit `serializeRaid` helper on raid responses; guarded by `server/tests/guild-boss.test.ts`.

@@ -163,6 +163,7 @@ model Quest {
   snoozeCount  Int        @default(0) // How many times this quest was snoozed
   reflection   String?    // User's reflection on why the quest failed
   lootDropped  String?    // JSON of last loot drop from this quest
+  bossStrikeUsed Boolean  @default(false) // Guild boss fights (#96): completion already fueled a boss strike
   expReward    Int        @default(0) // XP reward for completion
   goldReward   Int        @default(0) // Gold reward for completion
   completedAt  DateTime? // Timestamp when quest was completed
@@ -582,18 +583,21 @@ model Raid {
   guildId     String     @map("fk_guild_id")
   name String // Raid name
   description String? // Raid description
-  targetExp   BigInt    @default(0) // Target experience for raid completion
-  progressExp BigInt    @default(0) // Current progress toward target
+  targetExp   BigInt    @default(0) // Target experience for raid completion (boss: total HP)
+  progressExp BigInt    @default(0) // Current progress toward target (boss: damage dealt)
   status      String @default("ACTIVE") // Current raid status
   startDate   DateTime  @default(now()) // Raid start date
   endDate     DateTime? // Raid end date
   createdBy   String    @map("fk_user_id") // User who created the raid
+  isBoss      Boolean   @default(false) // Shared boss fight (#96): damage from verified quest completions
+  bossTier    Int       @default(0) // Boss difficulty tier 1-5 (scales HP and rewards; 0 = regular raid)
   createdAt   DateTime  @default(now()) // Creation timestamp
-  updatedAt   DateTime  @updatedAt // Last update timestamp
+  updatedAt   DateTime @updatedAt // Last update timestamp
   participants RaidParticipant[] @relation("RaidParticipants")
   guild       Guild      @relation("GuildRaids", fields: [guildId], references: [id], onDelete: Cascade)
   
   @@index([guildId]) // Guild's raids
+  @@index([guildId, isBoss, status]) // Guild's active boss lookup
   @@index([status]) // Raids by status
   @@index([createdBy]) // Raids by creator
   @@index([startDate]) // Raids by start date
