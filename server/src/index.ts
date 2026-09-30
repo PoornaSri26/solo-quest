@@ -2602,7 +2602,8 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
         category: category ?? undefined,
         // Status is intentionally excluded for COMPLETED transitions: the reward
         // transaction below claims the completion atomically (#183 race guard).
-        status: status === 'COMPLETED' ? undefined : status,
+        // ARCHIVED is handled separately (no rewards, just status change).
+        status: (status === 'COMPLETED' || status === 'ARCHIVED') ? undefined : status,
         deadline: deadline ? new Date(deadline) : undefined,
         notes: notes ? notes.trim() : undefined,
         gateId: gateId ?? undefined,
@@ -2617,6 +2618,16 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
 
     // Invalidate quest caches for this user
     await deleteCachePattern(`quests:${userId}:*`);
+
+    // Handle ARCHIVED status (no rewards, just status change)
+    if (status === 'ARCHIVED' && existingQuest.status !== 'ARCHIVED') {
+      await prisma.quest.update({
+        where: { id },
+        data: { status: 'ARCHIVED' },
+      });
+      emitToUser(userId, 'quest:updated', { ...quest, status: 'ARCHIVED' });
+      return res.json(quest);
+    }
 
     // If quest was completed, award rewards server-side with transaction
     if (status === 'COMPLETED' && existingQuest.status !== 'COMPLETED') {
@@ -2706,8 +2717,12 @@ app.patch('/api/quests/:id', authenticateToken, async (req, res) => {
           const statField = categoryToStat[existingQuest.category];
           const statGain = calculateStatGrowth(existingQuest.category, existingQuest.rank);
           
-          // HP recovery based on quest rank
-          const hpRecovery = calculateHpRecovery(existingQuest.rank);
+          // HP recovery only on first quest completion of the day to prevent HP farming
+          const lastActiveDateForStreak = stats.lastActiveDate ? new Date(stats.lastActiveDate) : null;
+          const isFirstQuestToday = !lastActiveDateForStreak || 
+            new Date(lastActiveDateForStreak.setHours(0, 0, 0, 0)).getTime() !== todayStart.getTime();
+          
+          const hpRecovery = isFirstQuestToday ? calculateHpRecovery(existingQuest.rank) : 0;
 
           // Combo bookkeeping: continue streak-of-day or start a new one
           const todayStart = new Date(nowDate);
@@ -3225,6 +3240,23 @@ app.patch('/api/gates/:id', authenticateToken, async (req, res) => {
     const total = gate.quests.length;
     const completed = gate.quests.filter(q => q.status === 'COMPLETED').length;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // Auto-transition gate status based on completion
+    let newStatus = status;
+    if (total > 0 && completed === total && gate.status === 'ACTIVE') {
+      newStatus = 'CLEARED';
+    } else if (gate.deadline && new Date(gate.deadline) < new Date() && gate.status === 'ACTIVE') {
+      newStatus = 'COLLAPSED';
+    }
+
+    // Update status if it changed
+    if (newStatus && newStatus !== gate.status) {
+      await withRetry(() => prisma.gate.update({
+        where: { id },
+        data: { status: newStatus },
+      }));
+      gate.status = newStatus;
+    }
 
     const gateWithProgress = { ...gate, progress };
 
