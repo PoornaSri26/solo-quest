@@ -40,6 +40,14 @@ cd .. && docker compose up -d   # or: cd server && npm run dev
 
 Then open the app, register a hunter, and complete your first quest — you'll be E-rank for about thirty seconds, and that's a promise.
 
+## Demo
+
+Check out the demo to see solo-quest in action:
+
+![Demo](brag-output/brag.gif)
+
+*Auto-generated promotional animation*
+
 ## 📖 Documentation
 
 || Doc | Purpose |
