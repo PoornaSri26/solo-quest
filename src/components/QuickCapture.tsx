@@ -1,6 +1,7 @@
 import { Zap, XCircle, Loader2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useState, useEffect, useRef } from 'react';
+import { sound } from '../lib/sound';
 
 const QuickCapture: React.FC = () => {
   const { createQuest } = useStore();
@@ -11,15 +12,17 @@ const QuickCapture: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard shortcut handler for `/` to focus input
+  // Keyboard shortcut handler for `/` or `Cmd/Ctrl + K` to focus input
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === '/' && !isOpen) {
+      if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !isOpen && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA')) {
         e.preventDefault();
+        sound.play('click');
         setIsOpen(true);
         setTimeout(() => inputRef.current?.focus(), 100);
       }
       if (e.key === 'Escape' && isOpen) {
+        sound.play('click');
         setIsOpen(false);
         setInputValue('');
         setError(null);
@@ -53,9 +56,11 @@ const QuickCapture: React.FC = () => {
         isBossQuest: false,
       });
 
+      sound.play('quest_complete');
       setInputValue('');
       setIsOpen(false);
     } catch (err: any) {
+      sound.play('error');
       setError(err.message || 'Failed to create quest. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -63,6 +68,7 @@ const QuickCapture: React.FC = () => {
   };
 
   const handleCancel = () => {
+    sound.play('click');
     setInputValue('');
     setError(null);
     setIsOpen(false);
