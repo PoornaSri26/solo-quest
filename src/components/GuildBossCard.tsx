@@ -5,6 +5,7 @@ import { Button } from './ui/Button';
 import { ProgressBar } from './ui/ProgressBar';
 import { createAuthApi } from '../lib/api';
 import { useStore } from '../store/useStore';
+import { sound } from '../lib/sound';
 
 /**
  * Shared guild boss fight (#96). Damage comes only from server-verified quest
@@ -97,8 +98,18 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
     if (!bossEvent) return;
     refresh();
     if (bossEvent.defeated) {
+      sound.play('boss_strike');
       addToast('success', 'The boss has been defeated!');
+      window.dispatchEvent(new CustomEvent('solo-quest:dopamine', {
+        detail: {
+          type: 'mastery',
+          message: '👑 GUILD BOSS SLAIN!',
+          value: 1000,
+        }
+      }));
       useStore.getState().clearBossState();
+    } else {
+      sound.play('boss_strike');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bossEvent?.updatedAt]);
@@ -106,12 +117,15 @@ export default function GuildBossCard({ onChanged }: { onChanged?: () => void })
   const handleSummon = async () => {
     setSummoning(true);
     try {
+      sound.play('click');
       const api = createAuthApi(() => token);
       await api.post('/guilds/boss/spawn', { tier: summonTier });
+      sound.play('quest_complete');
       addToast('success', 'The boss has been summoned. Clear quests to deal damage!');
       await refresh();
       onChanged?.();
     } catch (err: any) {
+      sound.play('error');
       addToast('error', err?.message || 'Summon failed.');
     } finally {
       setSummoning(false);

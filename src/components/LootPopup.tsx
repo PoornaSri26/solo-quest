@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { LootItem } from '../shared/types';
+import { sound } from '../lib/sound';
 
 const RARITY_STYLES: Record<LootItem['rarity'], { ring: string; glow: string; label: string; bg: string }> = {
   common: { ring: 'border-slate-400/60', glow: 'shadow-slate-400/20', label: 'text-slate-300', bg: 'from-slate-800/90 to-slate-900/90' },
@@ -25,6 +26,7 @@ export default function LootPopup() {
       return;
     }
     setShow(true);
+    sound.play('loot_open');
     
     // Dramatic scale animation
     setScale(0);

@@ -13,6 +13,7 @@ import LootPopup from './components/LootPopup';
 import DopamineFeedback from './components/DopamineFeedback';
 import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
+import SoundToggle from './components/SoundToggle';
 import { SkipLink } from './components/SkipLink';
 import ChronicleSidebarButton from './components/ChronicleSidebarButton';
 import { getAvatarUrl } from './lib/avatars';
@@ -105,16 +106,19 @@ const AppLayout: React.FC = () => {
       <SkipLink />
       
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border-subtle flex items-center justify-between px-4 z-40">
-        <div className="font-display text-gold-primary text-xl tracking-wider">Solo Quest</div>
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 text-text-secondary hover:text-text-primary transition-fast"
-          aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
-          aria-expanded={isMobileMenuOpen}
-        >
-          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface/90 backdrop-blur-xl border-b border-border-subtle flex items-center justify-between px-4 z-40">
+        <div className="font-display text-gold-primary text-xl tracking-wider font-bold">Solo Quest</div>
+        <div className="flex items-center gap-2">
+          <SoundToggle />
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 text-text-secondary hover:text-text-primary transition-fast"
+            aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMobileMenuOpen}
+          >
+            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </div>
 
       {/* Sidebar Overlay for Mobile */}
@@ -170,9 +174,10 @@ const AppLayout: React.FC = () => {
           </div>
         )}
 
-        {/* UI Mode Toggle */}
-        <div className="mb-4">
+        {/* UI Mode Toggle & Sound Toggle */}
+        <div className="mb-4 flex items-center justify-between gap-2">
           <UIModeToggle />
+          <SoundToggle />
         </div>
 
         <nav className="flex-1 space-y-1" aria-label="Main navigation">
