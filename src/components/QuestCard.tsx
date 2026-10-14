@@ -124,11 +124,37 @@ const QuestCard: React.FC<{
       if (data.success) {
         setShowTieredModal(false);
         addToast('success', `Quest completed with ${data.quality.toLowerCase()} quality! +${data.rewards.xp} XP, +${data.rewards.gold} gold.`);
+        window.dispatchEvent(new CustomEvent('solo-quest:dopamine', {
+          detail: {
+            type: 'quest_complete',
+            message: quality === 'PERFECT' ? '🌟 S-Rank Execution!' : '⚔️ Quest Cleared!',
+            value: data.rewards.xp,
+          }
+        }));
         await useStore.getState().fetchQuests();
         await useStore.getState().fetchStats();
       }
     } catch (error) {
       console.error('Failed to complete quest with tiered rewards:', error);
+      setError('Failed to complete quest. Please try again.');
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleComplete = async () => {
+    try {
+      setIsLoading('complete');
+      await completeQuest(quest.id);
+      window.dispatchEvent(new CustomEvent('solo-quest:dopamine', {
+        detail: {
+          type: 'quest_complete',
+          message: '⚔️ Quest Cleared!',
+          value: quest.expReward || 50,
+        }
+      }));
+    } catch (err) {
+      console.error('Failed to complete quest:', err);
       setError('Failed to complete quest. Please try again.');
     } finally {
       setIsLoading(null);
@@ -295,9 +321,9 @@ const QuestCard: React.FC<{
               {/* Complete Button */}
               {!['COMPLETED', 'FAILED', 'ARCHIVED'].includes(quest.status) && (
                 <button
-                  onClick={() => completeQuest(quest.id)}
+                  onClick={handleComplete}
                   disabled={isLoading !== null}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-green-clear/20 text-green-clear hover:bg-green-clear/30 rounded-sm transition-fast disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-green-500/20 text-emerald-400 hover:bg-green-500/30 border border-emerald-500/30 rounded-md transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label={`Complete quest: ${quest.title}`}
                 >
                   {isLoading === 'complete' ? (

@@ -211,28 +211,22 @@ const Dashboard: React.FC = () => {
           {/* Main Grid */}
           <div ref={mainGridRef} className={`grid gap-6 lg:grid-cols-3 mt-6 ${isIdleState ? 'hidden' : ''}`}>
         {/* Daily Dungeon Card */}
-        <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600} className="lg:col-span-2">
-        <section
-          className="h-full bg-gradient-to-br from-surface to-raised border border-border-subtle rounded-md p-6 hover:border-violet-gate/50 transition-all duration-300"
-          style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)' }}
-        >
+        <Tilt tiltMaxAngleX={2} tiltMaxAngleY={2} transitionSpeed={600} className="lg:col-span-2">
+        <section className="h-full hud-panel rounded-xl p-6 hover:border-violet-gate/50 transition-all duration-300">
           <h2 className="mb-4 text-lg font-display flex items-center gap-3 text-text-primary">
             <span className="text-xl">⛏️</span>
-            <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg, #C9A84C, #fff)' }}>Daily Dungeon</span>
+            <span className="bg-clip-text text-transparent font-bold" style={{ backgroundImage: 'linear-gradient(90deg, #C9A84C, #fff)' }}>Daily Dungeon</span>
           </h2>
           <DailyDungeon />
         </section>
         </Tilt>
 
         {/* Active Quests */}
-        <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600}>
-        <section
-          className="h-full bg-gradient-to-br from-surface to-raised border border-border-subtle rounded-md p-6 hover:border-crimson/40 transition-all duration-300"
-          style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)' }}
-        >
+        <Tilt tiltMaxAngleX={2} tiltMaxAngleY={2} transitionSpeed={600}>
+        <section className="h-full hud-panel rounded-xl p-6 hover:border-crimson/40 transition-all duration-300">
           <h2 className="mb-4 text-lg font-display flex items-center gap-3 text-text-primary">
             <span className="text-xl">⚔️</span>
-            <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg, #c41e3a, #fff)' }}>Active Quests</span>
+            <span className="bg-clip-text text-transparent font-bold" style={{ backgroundImage: 'linear-gradient(90deg, #c41e3a, #fff)' }}>Active Quests</span>
           </h2>
           <div className="space-y-3">
             {sortedActiveQuests.map((quest) => (
@@ -252,28 +246,22 @@ const Dashboard: React.FC = () => {
         </Tilt>
 
         {/* Gates List */}
-        <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600} className="lg:col-span-2">
-        <section
-          className="h-full bg-gradient-to-br from-surface to-raised border border-border-subtle rounded-md p-6 hover:border-gold-primary/40 transition-all duration-300"
-          style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)' }}
-        >
+        <Tilt tiltMaxAngleX={2} tiltMaxAngleY={2} transitionSpeed={600} className="lg:col-span-2">
+        <section className="h-full hud-panel rounded-xl p-6 hover:border-gold-primary/40 transition-all duration-300">
           <h2 className="mb-4 text-lg font-display flex items-center gap-3 text-text-primary">
             <span className="text-xl">🚪</span>
-            <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg, #C9A84C, #fff)' }}>Gates (Projects)</span>
+            <span className="bg-clip-text text-transparent font-bold" style={{ backgroundImage: 'linear-gradient(90deg, #C9A84C, #fff)' }}>Gates (Projects)</span>
           </h2>
           <GatesList />
         </section>
         </Tilt>
 
         {/* Hunter Stats Preview */}
-        <Tilt tiltMaxAngleX={3} tiltMaxAngleY={3} transitionSpeed={600}>
-        <section
-          className="h-full bg-gradient-to-br from-surface to-raised border border-border-subtle rounded-md p-6 hover:border-violet-gate/50 transition-all duration-300"
-          style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)' }}
-        >
+        <Tilt tiltMaxAngleX={2} tiltMaxAngleY={2} transitionSpeed={600}>
+        <section className="h-full hud-panel rounded-xl p-6 hover:border-violet-gate/50 transition-all duration-300">
           <h2 className="mb-4 text-lg font-display flex items-center gap-3 text-text-primary">
             <span className="text-xl">📊</span>
-            <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(90deg, #a594f5, #fff)' }}>Quick Stats</span>
+            <span className="bg-clip-text text-transparent font-bold" style={{ backgroundImage: 'linear-gradient(90deg, #a594f5, #fff)' }}>Quick Stats</span>
           </h2>
           <StatDashboard />
 

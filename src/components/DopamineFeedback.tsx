@@ -16,9 +16,55 @@ export default function DopamineFeedback() {
   const [show, setShow] = useState(false);
   const [particles, setParticles] = useState<Array<{id: number, x: number, y: number}>>([]);
 
+  const playSynthChime = (type: FeedbackEvent['type']) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      if (type === 'level_up' || type === 'mastery') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.35);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
+      } else {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1);
+        osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.2);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      }
+    } catch {
+      // AudioContext blocked or unsupported
+    }
+  };
+
   const triggerFeedback = (event: FeedbackEvent) => {
     setFeedback(event);
     setShow(true);
+
+    // Haptic feedback if supported on mobile
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate([20, 50, 40]);
+      } catch {
+        // Ignored
+      }
+    }
+
+    playSynthChime(event.type);
 
     // Generate particles
     const newParticles = Array.from({ length: 30 }, (_, i) => ({
@@ -28,17 +74,19 @@ export default function DopamineFeedback() {
     }));
     setParticles(newParticles);
 
-    setTimeout(() => setShow(false), 2000);
+    setTimeout(() => setShow(false), 2200);
   };
 
-  // Expose the trigger to the module-level hook below so external callers
-  // (store subscriptions, dev tools) can fire feedback events.
-  (window as any).__dopamineFeedback = triggerFeedback;
-
-  // Wire-up hook for future store integration (see useDopamineFeedback below).
+  // Expose the trigger to window and custom event
   useEffect(() => {
-    // This would be triggered by store events
-    // For now, it's a component that can be called manually
+    (window as any).__dopamineFeedback = triggerFeedback;
+    const handler = (e: CustomEvent<FeedbackEvent>) => {
+      if (e.detail) triggerFeedback(e.detail);
+    };
+    window.addEventListener('solo-quest:dopamine' as any, handler);
+    return () => {
+      window.removeEventListener('solo-quest:dopamine' as any, handler);
+    };
   }, []);
 
   if (!show || !feedback) return null;

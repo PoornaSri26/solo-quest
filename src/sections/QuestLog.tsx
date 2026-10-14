@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 export const QuestLog = () => {
   const { quests, isLoading } = useStore();
@@ -11,30 +15,28 @@ export const QuestLog = () => {
       return;
     }
 
-    // Only animate if we have quests and GSAP is available
     const validCards = questsRef.current.filter(Boolean);
     if (validCards.length > 0 && typeof window !== 'undefined') {
       try {
-        import('gsap').then(({ gsap }) => {
-          import('gsap/ScrollTrigger').then(({ ScrollTrigger }) => {
-            gsap.registerPlugin(ScrollTrigger);
-            gsap.from(validCards, {
-              opacity: 0,
-              y: 50,
-              duration: 0.6,
-              ease: 'power2.out',
-              stagger: 0.1,
-              scrollTrigger: {
-                trigger: validCards[0],
-                start: 'top 80%',
-                end: 'bottom 20%',
-                toggleActions: 'play none none reverse',
-              },
-            });
-          });
+        const anim = gsap.from(validCards, {
+          opacity: 0,
+          y: 50,
+          duration: 0.6,
+          ease: 'power2.out',
+          stagger: 0.1,
+          scrollTrigger: {
+            trigger: validCards[0],
+            start: 'top 80%',
+            end: 'bottom 20%',
+            toggleActions: 'play none none reverse',
+          },
         });
+
+        return () => {
+          anim.kill();
+        };
       } catch {
-        // GSAP not available, skip animations
+        // Fallback gracefully
       }
     }
   }, [quests]);

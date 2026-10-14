@@ -788,3 +788,115 @@ select:focus-visible {
     padding: 8px;
   }
 }
+
+/* ==========================================================================
+   Senior UI / HUD Design System Extensions
+   ========================================================================== */
+
+/* Cyberpunk HUD Glassmorphism Panels */
+.hud-panel {
+  background: rgba(13, 14, 24, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-panel:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Futuristic Scanline Overlay */
+.hud-scanline {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+}
+
+/* Rank Glow Accents */
+.rank-glow-S {
+  box-shadow: 0 0 25px -4px rgba(245, 158, 11, 0.4), inset 0 0 15px -3px rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.rank-glow-A {
+  box-shadow: 0 0 25px -4px rgba(239, 68, 68, 0.4), inset 0 0 15px -3px rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.rank-glow-B {
+  box-shadow: 0 0 25px -4px rgba(139, 92, 246, 0.4), inset 0 0 15px -3px rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.rank-glow-C {
+  box-shadow: 0 0 20px -4px rgba(59, 130, 246, 0.35), inset 0 0 12px -3px rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.rank-glow-D {
+  box-shadow: 0 0 18px -4px rgba(16, 185, 129, 0.3), inset 0 0 10px -3px rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.rank-glow-E {
+  box-shadow: 0 0 15px -5px rgba(148, 163, 184, 0.25);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* Cybernetic Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(10, 11, 18, 0.8);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 110, 240, 0.3);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 110, 240, 0.6);
+  box-shadow: 0 0 10px rgba(124, 110, 240, 0.5);
+}
+
+/* Subtle Animated Shimmer for S-Rank & Milestones */
+@keyframes hud-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.hud-shimmer-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  animation: hud-shimmer 4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}

@@ -10,6 +10,7 @@ import SystemToastContainer from './components/SystemToastContainer';
 import ConnectionBanner from './components/ConnectionBanner';
 import QuestFeedback from './components/QuestFeedback';
 import LootPopup from './components/LootPopup';
+import DopamineFeedback from './components/DopamineFeedback';
 import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
 import { SkipLink } from './components/SkipLink';
@@ -126,20 +127,36 @@ const AppLayout: React.FC = () => {
 
       {/* Sidebar */}
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-64 bg-surface border-r border-border-subtle flex flex-col p-4 flex-shrink-0 transition-transform duration-300 ease-in-out
+        fixed md:static inset-y-0 left-0 z-50 w-64 bg-surface/90 backdrop-blur-xl border-r border-border-subtle flex flex-col p-4 flex-shrink-0 transition-transform duration-300 ease-in-out shadow-2xl
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div className="flex items-center space-x-3 mb-6">
-          <img
-            src={hunter?.avatarUrl || getAvatarUrl(hunter?.hunterId || hunter?.displayName || 'Hunter')}
-            alt="Avatar"
-            className="w-12 h-12 rounded-sm border border-border-subtle bg-raised"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = getAvatarUrl(hunter?.hunterId || hunter?.displayName || 'Hunter');
-            }}
-          />
+          <div className="relative">
+            <img
+              src={hunter?.avatarUrl || getAvatarUrl(hunter?.hunterId || hunter?.displayName || 'Hunter')}
+              alt="Avatar"
+              className={`w-12 h-12 rounded-lg border-2 ${
+                stats?.rank ? `rank-glow-${stats.rank}` : 'border-border-subtle'
+              } bg-raised object-cover transition-all duration-300`}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getAvatarUrl(hunter?.hunterId || hunter?.displayName || 'Hunter');
+              }}
+            />
+            {stats?.rank && (
+              <span className={`absolute -bottom-1 -right-1 text-[10px] font-bold px-1.5 py-0.2 rounded-full font-display border ${
+                stats.rank === 'S' ? 'bg-gold-primary text-black border-yellow-300 font-extrabold shadow-lg shadow-gold-primary/50' :
+                stats.rank === 'A' ? 'bg-red-500 text-white border-red-300' :
+                stats.rank === 'B' ? 'bg-purple-600 text-white border-purple-300' :
+                stats.rank === 'C' ? 'bg-blue-600 text-white border-blue-300' :
+                stats.rank === 'D' ? 'bg-emerald-600 text-white border-emerald-300' :
+                'bg-slate-700 text-white border-slate-500'
+              }`}>
+                {stats.rank}
+              </span>
+            )}
+          </div>
           <div>
-            <p className="font-display text-text-primary tracking-wide">Solo Quest</p>
+            <p className="font-display text-text-primary tracking-wide font-bold">Solo Quest</p>
             <p className="text-sm text-text-secondary truncate max-w-[140px]">
               {hunter?.displayName || 'Hunter'}
             </p>
@@ -418,6 +435,9 @@ const AppLayout: React.FC = () => {
 
       {/* Gameplay: Loot drop battle payoff */}
       <LootPopup />
+
+      {/* Dopamine satisfaction feedback with procedural audio & haptics */}
+      <DopamineFeedback />
     </div>
   );
 };
