@@ -17,6 +17,7 @@
 // player does not re-read chapters they already out-leveled).
 
 import type { HunterStats, Rank } from '../shared/types';
+import { createAuthApi } from './api';
 
 export interface StoryChapter {
   id: string;
@@ -197,7 +198,6 @@ export async function fetchAcknowledged(getToken: () => string | null): Promise<
   const local = loadAcknowledged();
   let server: string[] = [];
   try {
-    const { createAuthApi } = await import('./api');
     const api = createAuthApi(getToken);
     const data = await api.get<{ clearedIds: string[] }>('/story');
     if (Array.isArray(data?.clearedIds)) {
@@ -213,7 +213,6 @@ export async function fetchAcknowledged(getToken: () => string | null): Promise<
 export async function persistAcknowledged(getToken: () => string | null, ids: string[]): Promise<void> {
   saveAcknowledged(ids);
   try {
-    const { createAuthApi } = await import('./api');
     const api = createAuthApi(getToken);
     await api.put('/story', { clearedIds: ids });
   } catch {

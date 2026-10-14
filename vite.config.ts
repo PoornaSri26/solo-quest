@@ -10,5 +10,18 @@ export default defineConfig({
     watch: {
       usePolling: true
     }
+  },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'three-vendor': ['three', '@react-three/fiber', '@react-three/drei'],
+          'anim-vendor': ['gsap', 'framer-motion'],
+          'ui-vendor': ['lucide-react', 'react-icons', 'react-parallax-tilt'],
+          'core-vendor': ['react', 'react-dom', 'react-router-dom', 'zustand']
+        }
+      }
+    }
   }
 })
