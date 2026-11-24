@@ -4,6 +4,7 @@ import { useStore } from './store/useStore';
 import { ShieldCheck } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import AuthPage from './pages/AuthPage';
+import NotFoundPage from './pages/NotFoundPage';
 import LandingPage from './pages/LandingPage';
 import OnboardingPage from './pages/OnboardingPage';
 import SystemToastContainer from './components/SystemToastContainer';
@@ -425,7 +426,7 @@ const AppLayout: React.FC = () => {
               </Suspense>
             </SuperadminGuard>
           } />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>
 
