@@ -13,6 +13,7 @@ import LootPopup from './components/LootPopup';
 import DopamineFeedback from './components/DopamineFeedback';
 import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
+import ThemeToggle from './components/ThemeToggle';
 import SoundToggle from './components/SoundToggle';
 import { SkipLink } from './components/SkipLink';
 import ChronicleSidebarButton from './components/ChronicleSidebarButton';
@@ -177,6 +178,7 @@ const AppLayout: React.FC = () => {
         {/* UI Mode Toggle & Sound Toggle */}
         <div className="mb-4 flex items-center justify-between gap-2">
           <UIModeToggle />
+          <ThemeToggle />
           <SoundToggle />
         </div>
 

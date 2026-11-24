@@ -5,7 +5,13 @@ import './index.css';
 import './components/Divider.css';
 import './components/Hero.css';
 
-// Register Service Worker for offline support
+// Apply persisted theme before first render to avoid flash
+try {
+  if (localStorage.getItem('sq-theme') === 'light') {
+    document.documentElement.classList.add('dark');
+  }
+} catch {}
+
 if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(
