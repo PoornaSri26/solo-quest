@@ -14,6 +14,7 @@ import DopamineFeedback from './components/DopamineFeedback';
 import HunterStatusWindow from './components/HunterStatusWindow';
 import UIModeToggle from './components/UIModeToggle';
 import ThemeToggle from './components/ThemeToggle';
+import ShortcutsHelp from './components/ShortcutsHelp';
 import SoundToggle from './components/SoundToggle';
 import { SkipLink } from './components/SkipLink';
 import ChronicleSidebarButton from './components/ChronicleSidebarButton';
@@ -428,6 +429,7 @@ const AppLayout: React.FC = () => {
       </main>
 
       <SystemToastContainer />
+      <ShortcutsHelp />
 
       {/* Offline indicator (#421): shows while realtime sync is down */}
       <ConnectionBanner />
