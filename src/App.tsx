@@ -17,6 +17,7 @@ import UIModeToggle from './components/UIModeToggle';
 import ThemeToggle from './components/ThemeToggle';
 import ShortcutsHelp from './components/ShortcutsHelp';
 import BackToTop from './components/BackToTop';
+import ScrollProgress from './components/ScrollProgress';
 import SoundToggle from './components/SoundToggle';
 import { SkipLink } from './components/SkipLink';
 import ChronicleSidebarButton from './components/ChronicleSidebarButton';
@@ -433,6 +434,7 @@ const AppLayout: React.FC = () => {
       <SystemToastContainer />
       <ShortcutsHelp />
       <BackToTop />
+      <ScrollProgress />
 
       {/* Offline indicator (#421): shows while realtime sync is down */}
       <ConnectionBanner />
